@@ -1,0 +1,14 @@
+{
+  "name": "finance-clarity-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "api:dev": "npm --workspace @finance-clarity/api run dev",
+    "api:typecheck": "npm --workspace @finance-clarity/api run typecheck"
+  }
+}

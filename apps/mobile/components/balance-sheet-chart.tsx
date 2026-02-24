@@ -44,13 +44,14 @@ function toAreaPath(points: Coordinate[], baselineY: number): string {
 export function BalanceSheetChart({ points }: Props) {
   const assets = points.map((point) => point.total_assets);
   const liabilities = points.map((point) => point.total_liabilities);
+  const liabilitiesBelowBaseline = liabilities.map((value) => -value);
   const netWorth = points.map((point) => point.net_worth);
 
-  const scaleMin = Math.min(0, ...assets, ...liabilities, ...netWorth);
-  const scaleMax = Math.max(0, ...assets, ...liabilities, ...netWorth);
+  const scaleMin = Math.min(0, ...assets, ...liabilitiesBelowBaseline, ...netWorth);
+  const scaleMax = Math.max(0, ...assets, ...liabilitiesBelowBaseline, ...netWorth);
 
   const assetsCoords = buildCoordinates(assets, scaleMin, scaleMax);
-  const liabilitiesCoords = buildCoordinates(liabilities, scaleMin, scaleMax);
+  const liabilitiesCoords = buildCoordinates(liabilitiesBelowBaseline, scaleMin, scaleMax);
   const netWorthCoords = buildCoordinates(netWorth, scaleMin, scaleMax);
 
   const hasTrend = netWorthCoords.length > 1;
@@ -71,9 +72,9 @@ export function BalanceSheetChart({ points }: Props) {
             position: "absolute",
             left: PADDING,
             right: PADDING,
-            bottom: PADDING,
+            top: baselineY,
             height: 1,
-            backgroundColor: "rgba(39, 35, 28, 0.16)",
+            backgroundColor: "rgba(39, 35, 28, 0.14)",
           }}
         />
 
@@ -84,7 +85,7 @@ export function BalanceSheetChart({ points }: Props) {
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             style={{ position: "absolute", left: 0, top: 0 }}>
             <Path d={toAreaPath(assetsCoords, baselineY)} fill="rgba(103, 165, 180, 0.45)" />
-            <Path d={toAreaPath(liabilitiesCoords, baselineY)} fill="rgba(136, 123, 102, 0.28)" />
+            <Path d={toAreaPath(liabilitiesCoords, baselineY)} fill="rgba(136, 123, 102, 0.2)" />
             <Polyline
               points={netWorthCoords.map(({ x, y }) => `${x},${y}`).join(" ")}
               fill="none"

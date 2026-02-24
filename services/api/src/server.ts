@@ -155,17 +155,34 @@ app.get('/chart/networth', async (req: AuthedRequest, res: Response) => {
   }
 
   const query = `
+    WITH date_series AS (
+      SELECT generate_series($2::date, $3::date, interval '1 day')::date AS as_of_date
+    ),
+    daily_totals AS (
+      SELECT
+        vs.as_of_date,
+        SUM(CASE WHEN p.side = 'asset' THEN vs.value ELSE 0 END) AS total_assets,
+        SUM(CASE WHEN p.side = 'liability' THEN vs.value ELSE 0 END) AS total_liabilities
+      FROM valuation_snapshots vs
+      INNER JOIN positions p ON p.id = vs.position_id
+      WHERE vs.user_id = $1
+        AND vs.as_of_date BETWEEN $2::date AND $3::date
+      GROUP BY vs.as_of_date
+    )
     SELECT
-      vs.as_of_date,
-      SUM(CASE WHEN p.side = 'asset' THEN vs.value ELSE 0 END) AS total_assets,
-      SUM(CASE WHEN p.side = 'liability' THEN vs.value ELSE 0 END) AS total_liabilities,
-      SUM(CASE WHEN p.side = 'asset' THEN vs.value ELSE -vs.value END) AS net_worth
-    FROM valuation_snapshots vs
-    INNER JOIN positions p ON p.id = vs.position_id
-    WHERE vs.user_id = $1
-      AND vs.as_of_date BETWEEN $2::date AND $3::date
-    GROUP BY vs.as_of_date
-    ORDER BY vs.as_of_date ASC
+      ds.as_of_date,
+      COALESCE(latest.total_assets, 0) AS total_assets,
+      COALESCE(latest.total_liabilities, 0) AS total_liabilities,
+      COALESCE(latest.total_assets, 0) - COALESCE(latest.total_liabilities, 0) AS net_worth
+    FROM date_series ds
+    LEFT JOIN LATERAL (
+      SELECT dt.total_assets, dt.total_liabilities
+      FROM daily_totals dt
+      WHERE dt.as_of_date <= ds.as_of_date
+      ORDER BY dt.as_of_date DESC
+      LIMIT 1
+    ) latest ON true
+    ORDER BY ds.as_of_date ASC
   `;
 
   const { rows } = await pool.query(query, [req.userId, from, to]);

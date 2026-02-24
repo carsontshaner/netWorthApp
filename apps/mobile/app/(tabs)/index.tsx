@@ -1,10 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, SafeAreaView, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  Text,
+  View,
+} from "react-native";
+import { useRouter } from "expo-router";
 
 import { BalanceSheetChart } from "@/components/balance-sheet-chart";
 import { fetchNetWorth, type NetWorthPoint } from "@/src/api";
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [data, setData] = useState<NetWorthPoint[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +41,15 @@ export default function HomeScreen() {
               ${latest?.net_worth.toLocaleString()}
             </Text>
             <BalanceSheetChart points={data} />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/composition")}
+              style={{ marginTop: 12, alignSelf: "flex-start", paddingVertical: 4 }}
+            >
+              <Text style={{ fontSize: 14, opacity: 0.72 }}>
+                See composition →
+              </Text>
+            </Pressable>
           </>
         )}
 

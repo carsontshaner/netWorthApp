@@ -155,17 +155,48 @@ app.get('/chart/networth', async (req: AuthedRequest, res: Response) => {
   }
 
   const query = `
+    WITH date_series AS (
+      SELECT generate_series($2::date, $3::date, interval '1 day')::date AS as_of_date
+    ),
+    daily_totals AS (
+      SELECT
+        (vs.as_of_date::date) AS as_of_date,
+        SUM(CASE WHEN p.side = 'asset' THEN vs.value ELSE 0 END) AS total_assets,
+        SUM(CASE WHEN p.side = 'liability' THEN vs.value ELSE 0 END) AS total_liabilities
+      FROM valuation_snapshots vs
+      INNER JOIN positions p ON p.id = vs.position_id
+      WHERE vs.user_id = $1
+        AND (vs.as_of_date::date) <= $3::date
+      GROUP BY (vs.as_of_date::date)
+    ),
+    chart_series AS (
+      SELECT
+        ds.as_of_date,
+        latest.total_assets,
+        latest.total_liabilities
+      FROM date_series ds
+      LEFT JOIN LATERAL (
+        SELECT dt.total_assets, dt.total_liabilities
+        FROM daily_totals dt
+        WHERE dt.as_of_date <= ds.as_of_date
+        ORDER BY dt.as_of_date DESC
+        LIMIT 1
+      ) latest ON true
+    ),
+    first_known AS (
+      SELECT MIN(as_of_date) AS as_of_date
+      FROM chart_series
+      WHERE total_assets IS NOT NULL OR total_liabilities IS NOT NULL
+    )
     SELECT
-      vs.as_of_date,
-      SUM(CASE WHEN p.side = 'asset' THEN vs.value ELSE 0 END) AS total_assets,
-      SUM(CASE WHEN p.side = 'liability' THEN vs.value ELSE 0 END) AS total_liabilities,
-      SUM(CASE WHEN p.side = 'asset' THEN vs.value ELSE -vs.value END) AS net_worth
-    FROM valuation_snapshots vs
-    INNER JOIN positions p ON p.id = vs.position_id
-    WHERE vs.user_id = $1
-      AND vs.as_of_date BETWEEN $2::date AND $3::date
-    GROUP BY vs.as_of_date
-    ORDER BY vs.as_of_date ASC
+      cs.as_of_date,
+      cs.total_assets,
+      cs.total_liabilities,
+      cs.total_assets - cs.total_liabilities AS net_worth
+    FROM chart_series cs
+    CROSS JOIN first_known fk
+    WHERE cs.as_of_date >= fk.as_of_date
+    ORDER BY cs.as_of_date ASC
   `;
 
   const { rows } = await pool.query(query, [req.userId, from, to]);

@@ -18,6 +18,7 @@ export async function fetchNetWorth(): Promise<NetWorthPoint[]> {
 
     const res = await fetch(
     `${API_BASE}/chart/networth?from=${from}&to=${to}`,
+
     {
       headers: {
         "x-user-id": "user_1"

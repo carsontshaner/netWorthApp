@@ -160,14 +160,14 @@ app.get('/chart/networth', async (req: AuthedRequest, res: Response) => {
     ),
     daily_totals AS (
       SELECT
-        vs.as_of_date,
+        (vs.as_of_date::date) AS as_of_date,
         SUM(CASE WHEN p.side = 'asset' THEN vs.value ELSE 0 END) AS total_assets,
         SUM(CASE WHEN p.side = 'liability' THEN vs.value ELSE 0 END) AS total_liabilities
       FROM valuation_snapshots vs
       INNER JOIN positions p ON p.id = vs.position_id
       WHERE vs.user_id = $1
-        AND vs.as_of_date BETWEEN $2::date AND $3::date
-      GROUP BY vs.as_of_date
+        AND (vs.as_of_date::date) BETWEEN $2::date AND $3::date
+      GROUP BY (vs.as_of_date::date)
     )
     SELECT
       ds.as_of_date,

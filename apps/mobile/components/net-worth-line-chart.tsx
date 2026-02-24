@@ -1,5 +1,6 @@
 import React from "react";
 import { Text, View } from "react-native";
+import Svg, { Polyline } from "react-native-svg";
 
 import type { NetWorthPoint } from "@/src/api";
 
@@ -58,29 +59,26 @@ export function NetWorthLineChart({ points }: Props) {
         />
 
         {hasTrend &&
-          coordinates.slice(0, -1).map((start, index) => {
-            const end = coordinates[index + 1];
-            const dx = end.x - start.x;
-            const dy = end.y - start.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+          (() => {
+            const polylinePoints = coordinates.map(({ x, y }) => `${x},${y}`).join(" ");
 
             return (
-              <View
-                key={`segment-${index}`}
-                style={{
-                  position: "absolute",
-                  left: start.x,
-                  top: start.y,
-                  width: length,
-                  height: 3,
-                  backgroundColor: "#5B4A3A",
-                  borderRadius: 99,
-                  transform: [{ rotate: `${angle}deg` }],
-                }}
-              />
+              <Svg
+                width="100%"
+                height={CHART_HEIGHT}
+                viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+                style={{ position: "absolute", left: 0, top: 0 }}>
+                <Polyline
+                  points={polylinePoints}
+                  fill="none"
+                  stroke="#5B4A3A"
+                  strokeWidth={3}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              </Svg>
             );
-          })}
+          })()}
 
         {!hasTrend && (
           <View

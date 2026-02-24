@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, SafeAreaView, Text, View } from "react-native";
 
-import { NetWorthLineChart } from "@/components/net-worth-line-chart";
+import { BalanceSheetChart } from "@/components/balance-sheet-chart";
 import { fetchNetWorth, type NetWorthPoint } from "@/src/api";
 
 export default function HomeScreen() {
@@ -32,7 +32,7 @@ export default function HomeScreen() {
             <Text style={{ marginTop: 8, fontSize: 44, fontWeight: "600" }}>
               ${latest?.net_worth.toLocaleString()}
             </Text>
-            <NetWorthLineChart points={data} />
+            <BalanceSheetChart points={data} />
           </>
         )}
 

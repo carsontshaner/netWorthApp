@@ -9,7 +9,7 @@ export type NetWorthPoint = {
 
 export async function fetchNetWorth(): Promise<NetWorthPoint[]> {
   const res = await fetch(
-    `${API_BASE}/chart/networth?from=2026-02-16&to=2026-02-16`,
+    `${API_BASE}/chart/networth?from=2026-02-16&to=2026-02-18`,
     {
       headers: {
         "x-user-id": "user_1"

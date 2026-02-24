@@ -8,8 +8,17 @@ export type NetWorthPoint = {
 };
 
 export async function fetchNetWorth(): Promise<NetWorthPoint[]> {
-  const res = await fetch(
-    `${API_BASE}/chart/networth?from=2026-02-16&to=2026-02-18`,
+  const toDate = new Date();
+  const fromDate = new Date();
+  fromDate.setDate(toDate.getDate() - 30);
+
+  const from = formatDateYYYYMMDD(fromDate);
+  const to = formatDateYYYYMMDD(toDate); 
+  
+
+    const res = await fetch(
+    `${API_BASE}/chart/networth?from=${from}&to=${to}`,
+
     {
       headers: {
         "x-user-id": "user_1"
@@ -22,4 +31,10 @@ export async function fetchNetWorth(): Promise<NetWorthPoint[]> {
   }
 
   return res.json();
+}
+function formatDateYYYYMMDD(d: Date) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }

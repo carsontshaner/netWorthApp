@@ -144,6 +144,11 @@ app.get('/chart/networth', async (req: AuthedRequest, res: Response) => {
   const from = req.query.from as string | undefined;
   const to = req.query.to as string | undefined;
 
+  if (!req.userId) {
+    res.status(401).json({ error: 'Missing x-user-id' });
+    return;
+  }
+
   if (!from || !to) {
     res.status(400).json({ error: 'from and to query params are required (YYYY-MM-DD)' });
     return;
@@ -164,8 +169,17 @@ app.get('/chart/networth', async (req: AuthedRequest, res: Response) => {
   `;
 
   const { rows } = await pool.query(query, [req.userId, from, to]);
-  res.json(rows);
+
+  const normalized = rows.map((r: any) => ({
+    as_of_date: r.as_of_date,
+    total_assets: Number(r.total_assets),
+    total_liabilities: Number(r.total_liabilities),
+    net_worth: Number(r.net_worth)
+  }));
+
+  res.json(normalized);
 });
+
 
 const port = Number(process.env.PORT ?? 4000);
 app.listen(port, () => {

@@ -166,23 +166,37 @@ app.get('/chart/networth', async (req: AuthedRequest, res: Response) => {
       FROM valuation_snapshots vs
       INNER JOIN positions p ON p.id = vs.position_id
       WHERE vs.user_id = $1
-        AND (vs.as_of_date::date) BETWEEN $2::date AND $3::date
+        AND (vs.as_of_date::date) <= $3::date
       GROUP BY (vs.as_of_date::date)
+    ),
+    chart_series AS (
+      SELECT
+        ds.as_of_date,
+        latest.total_assets,
+        latest.total_liabilities
+      FROM date_series ds
+      LEFT JOIN LATERAL (
+        SELECT dt.total_assets, dt.total_liabilities
+        FROM daily_totals dt
+        WHERE dt.as_of_date <= ds.as_of_date
+        ORDER BY dt.as_of_date DESC
+        LIMIT 1
+      ) latest ON true
+    ),
+    first_known AS (
+      SELECT MIN(as_of_date) AS as_of_date
+      FROM chart_series
+      WHERE total_assets IS NOT NULL OR total_liabilities IS NOT NULL
     )
     SELECT
-      ds.as_of_date,
-      COALESCE(latest.total_assets, 0) AS total_assets,
-      COALESCE(latest.total_liabilities, 0) AS total_liabilities,
-      COALESCE(latest.total_assets, 0) - COALESCE(latest.total_liabilities, 0) AS net_worth
-    FROM date_series ds
-    LEFT JOIN LATERAL (
-      SELECT dt.total_assets, dt.total_liabilities
-      FROM daily_totals dt
-      WHERE dt.as_of_date <= ds.as_of_date
-      ORDER BY dt.as_of_date DESC
-      LIMIT 1
-    ) latest ON true
-    ORDER BY ds.as_of_date ASC
+      cs.as_of_date,
+      cs.total_assets,
+      cs.total_liabilities,
+      cs.total_assets - cs.total_liabilities AS net_worth
+    FROM chart_series cs
+    CROSS JOIN first_known fk
+    WHERE cs.as_of_date >= fk.as_of_date
+    ORDER BY cs.as_of_date ASC
   `;
 
   const { rows } = await pool.query(query, [req.userId, from, to]);

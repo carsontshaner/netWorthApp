@@ -1,28 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, SafeAreaView, Text, View } from "react-native";
 
-const API_BASE = "http://192.168.1.158:4000";
-
-type NetWorthPoint = {
-  as_of_date: string;
-  total_assets: number;
-  total_liabilities: number;
-  net_worth: number;
-};
-
-async function fetchNetWorth(): Promise<NetWorthPoint[]> {
-  const res = await fetch(
-    `${API_BASE}/chart/networth?from=2026-02-16&to=2026-02-16`,
-    {
-      headers: {
-        "x-user-id": "user_1",
-      },
-    }
-  );
-
-  if (!res.ok) throw new Error("Failed to fetch net worth");
-  return res.json();
-}
+import { NetWorthLineChart } from "@/components/net-worth-line-chart";
+import { fetchNetWorth, type NetWorthPoint } from "@/src/api";
 
 export default function HomeScreen() {
   const [data, setData] = useState<NetWorthPoint[] | null>(null);
@@ -48,9 +28,12 @@ export default function HomeScreen() {
             <ActivityIndicator />
           </View>
         ) : (
-          <Text style={{ marginTop: 8, fontSize: 44, fontWeight: "600" }}>
-            ${latest?.net_worth.toLocaleString()}
-          </Text>
+          <>
+            <Text style={{ marginTop: 8, fontSize: 44, fontWeight: "600" }}>
+              ${latest?.net_worth.toLocaleString()}
+            </Text>
+            <NetWorthLineChart points={data} />
+          </>
         )}
 
         <Text style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>

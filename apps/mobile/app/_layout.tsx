@@ -19,7 +19,8 @@ export default function RootLayout() {
         <Stack.Screen
           name="composition"
           options={{
-            title: "Composition",
+            title: "Depth",
+            headerBackTitle: "Chart",
             headerShadowVisible: false,
             headerStyle: { backgroundColor: "#F3E7D3" },
             headerTintColor: "#1D160D",

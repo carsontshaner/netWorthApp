@@ -212,6 +212,160 @@ app.get('/chart/networth', async (req: AuthedRequest, res: Response) => {
 });
 
 
+app.get('/composition/summary', async (req: AuthedRequest, res: Response) => {
+  const query = `
+    SELECT
+      p.id,
+      p.name,
+      p.side,
+      p.category,
+      latest.value,
+      latest.source_type
+    FROM positions p
+    LEFT JOIN LATERAL (
+      SELECT vs.value, vs.source_type
+      FROM valuation_snapshots vs
+      WHERE vs.position_id = p.id
+      ORDER BY vs.as_of_date DESC
+      LIMIT 1
+    ) latest ON true
+    WHERE p.user_id = $1
+    ORDER BY p.side, p.category, p.name
+  `;
+
+  const { rows } = await pool.query(query, [req.userId]);
+
+  const assetMap = new Map<string, { category: string; total: number; positions: { id: string; name: string; value: number | null; sourceType: string | null }[] }>();
+  const liabilityMap = new Map<string, { category: string; total: number; positions: { id: string; name: string; value: number | null; sourceType: string | null }[] }>();
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+
+  for (const row of rows) {
+    const value = row.value !== null ? Number(row.value) : null;
+    const positionEntry = { id: row.id, name: row.name, value, sourceType: row.source_type ?? null };
+    const map = row.side === 'asset' ? assetMap : liabilityMap;
+
+    if (!map.has(row.category)) {
+      map.set(row.category, { category: row.category, total: 0, positions: [] });
+    }
+    const group = map.get(row.category)!;
+    group.positions.push(positionEntry);
+
+    if (value !== null) {
+      group.total += value;
+      if (row.side === 'asset') totalAssets += value;
+      else totalLiabilities += value;
+    }
+  }
+
+  res.json({
+    assets: Array.from(assetMap.values()),
+    liabilities: Array.from(liabilityMap.values()),
+    totalAssets,
+    totalLiabilities,
+    netWorth: totalAssets - totalLiabilities,
+  });
+});
+
+app.get('/chart/composition', async (req: AuthedRequest, res: Response) => {
+  const from = req.query.from as string | undefined;
+  const to   = req.query.to   as string | undefined;
+
+  if (!from || !to) {
+    res.status(400).json({ error: 'from and to query params are required (YYYY-MM-DD)' });
+    return;
+  }
+
+  const query = `
+    WITH date_series AS (
+      SELECT generate_series($2::date, $3::date, interval '1 day')::date AS as_of_date
+    ),
+    categories AS (
+      SELECT DISTINCT category, side FROM positions WHERE user_id = $1
+    ),
+    daily_category_totals AS (
+      SELECT
+        p.category,
+        p.side,
+        (vs.as_of_date::date) AS as_of_date,
+        SUM(vs.value) AS total_value
+      FROM valuation_snapshots vs
+      INNER JOIN positions p ON p.id = vs.position_id
+      WHERE vs.user_id = $1
+        AND (vs.as_of_date::date) <= $3::date
+      GROUP BY p.category, p.side, (vs.as_of_date::date)
+    ),
+    chart_series AS (
+      SELECT
+        ds.as_of_date,
+        c.category,
+        c.side,
+        latest.total_value
+      FROM date_series ds
+      CROSS JOIN categories c
+      LEFT JOIN LATERAL (
+        SELECT dct.total_value
+        FROM daily_category_totals dct
+        WHERE dct.category = c.category
+          AND dct.side = c.side
+          AND dct.as_of_date <= ds.as_of_date
+        ORDER BY dct.as_of_date DESC
+        LIMIT 1
+      ) latest ON true
+    ),
+    first_known AS (
+      SELECT MIN(as_of_date) AS as_of_date
+      FROM chart_series
+      WHERE total_value IS NOT NULL
+    )
+    SELECT
+      cs.as_of_date,
+      cs.category,
+      cs.side,
+      COALESCE(cs.total_value, 0) AS total_value
+    FROM chart_series cs
+    CROSS JOIN first_known fk
+    WHERE cs.as_of_date >= fk.as_of_date
+    ORDER BY cs.side ASC, cs.category ASC, cs.as_of_date ASC
+  `;
+
+  const { rows } = await pool.query(query, [req.userId, from, to]);
+
+  // Extract dates from the first category's rows
+  const dates: string[] = [];
+  if (rows.length) {
+    const firstKey = `${rows[0].side}:${rows[0].category}`;
+    for (const row of rows) {
+      if (`${row.side}:${row.category}` !== firstKey) break;
+      dates.push(row.as_of_date);
+    }
+  }
+
+  // Pivot into per-category value arrays
+  const categoryMap = new Map<string, { category: string; side: string; values: number[] }>();
+  for (const row of rows) {
+    const key = `${row.side}:${row.category}`;
+    if (!categoryMap.has(key)) {
+      categoryMap.set(key, { category: row.category, side: row.side, values: [] });
+    }
+    categoryMap.get(key)!.values.push(Number(row.total_value));
+  }
+  const categories = Array.from(categoryMap.values());
+
+  // Net worth per date = sum(assets) - sum(liabilities)
+  const netWorth = dates.map((_, i) => {
+    let assets = 0;
+    let liabilities = 0;
+    for (const cat of categories) {
+      if (cat.side === 'asset') assets += cat.values[i] ?? 0;
+      else liabilities += cat.values[i] ?? 0;
+    }
+    return assets - liabilities;
+  });
+
+  res.json({ dates, categories, netWorth });
+});
+
 const port = Number(process.env.PORT ?? 4000);
 app.listen(port, () => {
   console.log(`API listening on :${port}`);

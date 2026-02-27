@@ -1,16 +1,20 @@
+import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
-import { Text, View } from "react-native";
+import { Text, View, useWindowDimensions } from "react-native";
 // eslint-disable-next-line import/no-unresolved
-import Svg, { Path, Polyline } from "react-native-svg";
+import Svg, { Line, Path, Polyline } from "react-native-svg";
 
-import type { NetWorthPoint } from "@/src/api";
+import type { ViewStyle } from "react-native";
+
+import type { CompositionChartData } from "@/src/api";
+import { categoryColor, categoryOrder, theme } from "@/src/theme";
 
 type Props = {
-  points: NetWorthPoint[];
+  data: CompositionChartData;
+  height?: number;
+  containerStyle?: ViewStyle;
 };
 
-const CHART_HEIGHT = 160;
-const CHART_WIDTH = 320;
 const PADDING = 14;
 
 type Coordinate = {
@@ -18,12 +22,18 @@ type Coordinate = {
   y: number;
 };
 
-function buildCoordinates(values: number[], min: number, max: number): Coordinate[] {
+function buildCoordinates(
+  values: number[],
+  min: number,
+  max: number,
+  chartWidth: number,
+  chartHeight: number,
+): Coordinate[] {
   if (!values.length) return [];
 
-  const range = max - min || 1;
-  const innerWidth = CHART_WIDTH - PADDING * 2;
-  const innerHeight = CHART_HEIGHT - PADDING * 2;
+  const range       = max - min || 1;
+  const innerWidth  = chartWidth  - PADDING * 2;
+  const innerHeight = chartHeight - PADDING * 2;
 
   return values.map((value, index) => ({
     x: PADDING + (index / Math.max(values.length - 1, 1)) * innerWidth,
@@ -33,64 +43,149 @@ function buildCoordinates(values: number[], min: number, max: number): Coordinat
 
 function toAreaPath(points: Coordinate[], baselineY: number): string {
   if (!points.length) return "";
-
   const lineSegment = points.map(({ x, y }) => `L ${x} ${y}`).join(" ");
   const first = points[0];
-  const last = points[points.length - 1];
-
+  const last  = points[points.length - 1];
   return `M ${first.x} ${baselineY} ${lineSegment} L ${last.x} ${baselineY} Z`;
 }
 
-export function BalanceSheetChart({ points }: Props) {
-  const assets = points.map((point) => point.total_assets);
-  const liabilities = points.map((point) => point.total_liabilities);
-  const liabilitiesBelowBaseline = liabilities.map((value) => -value);
-  const netWorth = points.map((point) => point.net_worth);
+function toStackedPath(topCoords: Coordinate[], bottomCoords: Coordinate[]): string {
+  if (!topCoords.length || !bottomCoords.length) return "";
+  const topParts    = topCoords.map(({ x, y }) => `L ${x} ${y}`);
+  const bottomParts = [...bottomCoords].reverse().map(({ x, y }) => `L ${x} ${y}`);
+  return `M ${topCoords[0].x} ${topCoords[0].y} ${topParts.slice(1).join(" ")} ${bottomParts.join(" ")} Z`;
+}
 
-  const scaleMin = Math.min(0, ...assets, ...liabilitiesBelowBaseline, ...netWorth);
-  const scaleMax = Math.max(0, ...assets, ...liabilitiesBelowBaseline, ...netWorth);
+export function BalanceSheetChart({ data, height = 260, containerStyle }: Props) {
+  const { width: windowWidth } = useWindowDimensions();
+  const CHART_WIDTH  = windowWidth;
+  const CHART_HEIGHT = height;
 
-  const assetsCoords = buildCoordinates(assets, scaleMin, scaleMax);
-  const liabilitiesCoords = buildCoordinates(liabilitiesBelowBaseline, scaleMin, scaleMax);
-  const netWorthCoords = buildCoordinates(netWorth, scaleMin, scaleMax);
+  const n = data.dates.length;
 
-  const hasTrend = netWorthCoords.length > 1;
-  const baselineY = buildCoordinates([0], scaleMin, scaleMax)[0]?.y ?? CHART_HEIGHT - PADDING;
+  // Sort by stacking order, then split by side
+  const sorted = [...data.categories].sort(
+    (a, b) => categoryOrder(a.category, a.side) - categoryOrder(b.category, b.side),
+  );
+  const assetCats     = sorted.filter((c) => c.side === "asset");
+  const liabilityCats = sorted.filter((c) => c.side === "liability");
+  const zeros = new Array(n).fill(0);
+
+  // Cumulative stacks: positive for assets, negative for liabilities
+  const assetStacks: number[][] = [];
+  for (let k = 0; k < assetCats.length; k++) {
+    const prev = assetStacks[k - 1] ?? zeros;
+    assetStacks.push(prev.map((v, i) => v + (assetCats[k].values[i] ?? 0)));
+  }
+
+  const liabilityStacks: number[][] = [];
+  for (let k = 0; k < liabilityCats.length; k++) {
+    const prev = liabilityStacks[k - 1] ?? zeros;
+    liabilityStacks.push(prev.map((v, i) => v - (liabilityCats[k].values[i] ?? 0)));
+  }
+
+  const allValues = [
+    0,
+    ...(assetStacks[assetStacks.length - 1] ?? []),
+    ...(liabilityStacks[liabilityStacks.length - 1] ?? []),
+    ...data.netWorth,
+  ];
+  const scaleMin = Math.min(...allValues);
+  const scaleMax = Math.max(...allValues);
+
+  const build = (vals: number[]) =>
+    buildCoordinates(vals, scaleMin, scaleMax, CHART_WIDTH, CHART_HEIGHT);
+
+  const baselineY      = build([0])[0]?.y ?? CHART_HEIGHT - PADDING;
+  const netWorthCoords = build(data.netWorth);
+  const hasTrend       = netWorthCoords.length > 1;
 
   return (
-    <View
-      style={{
-        marginTop: 24,
-        backgroundColor: "rgba(255,255,255,0.3)",
-        borderRadius: 16,
-        paddingVertical: 12,
-        paddingHorizontal: 10,
-      }}>
+    <View style={{ marginTop: 24, ...containerStyle }}>
       <View style={{ width: "100%", height: CHART_HEIGHT }}>
-        <View
-          style={{
-            position: "absolute",
-            left: PADDING,
-            right: PADDING,
-            top: baselineY,
-            height: 1,
-            backgroundColor: "rgba(39, 35, 28, 0.14)",
-          }}
-        />
-
         {hasTrend && (
           <Svg
             width="100%"
             height={CHART_HEIGHT}
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             style={{ position: "absolute", left: 0, top: 0 }}>
-            <Path d={toAreaPath(assetsCoords, baselineY)} fill="rgba(103, 165, 180, 0.45)" />
-            <Path d={toAreaPath(liabilitiesCoords, baselineY)} fill="rgba(136, 123, 102, 0.2)" />
+
+            {/* Asset stacked areas — above baseline */}
+            {assetCats.map((cat, k) => {
+              const topCoords    = build(assetStacks[k]);
+              const bottomCoords = build(assetStacks[k - 1] ?? zeros);
+              return (
+                <React.Fragment key={cat.category}>
+                  <Path
+                    d={toStackedPath(topCoords, bottomCoords)}
+                    fill={categoryColor(cat.category, "asset", k, assetCats.length)}
+                    opacity={0.85}
+                  />
+                  <Polyline
+                    points={topCoords.map(({ x, y }) => `${x},${y}`).join(" ")}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.5)"
+                    strokeWidth={1}
+                  />
+                </React.Fragment>
+              );
+            })}
+
+            {/* Liability stacked areas — below baseline */}
+            {liabilityCats.map((cat, k) => {
+              const bottomCoords = build(liabilityStacks[k]);
+              const topCoords    = build(liabilityStacks[k - 1] ?? zeros);
+              return (
+                <React.Fragment key={cat.category}>
+                  <Path
+                    d={toStackedPath(topCoords, bottomCoords)}
+                    fill={categoryColor(cat.category, "liability", k, liabilityCats.length)}
+                    opacity={0.85}
+                  />
+                  <Polyline
+                    points={topCoords.map(({ x, y }) => `${x},${y}`).join(" ")}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.5)"
+                    strokeWidth={1}
+                  />
+                </React.Fragment>
+              );
+            })}
+
+            {/* X-axis baseline — on top of fills, below net worth line */}
+            <Line
+              x1={0}
+              y1={baselineY}
+              x2={CHART_WIDTH}
+              y2={baselineY}
+              stroke={theme.text.primary}
+              strokeWidth={3}
+              opacity={0.85}
+            />
+
+            {/* Net worth shading */}
+            <Path
+              d={toAreaPath(netWorthCoords, baselineY)}
+              fill={theme.netWorth.line}
+              opacity={0.30}
+            />
+
+            {/* Net worth halo — sits behind the line for contrast */}
             <Polyline
               points={netWorthCoords.map(({ x, y }) => `${x},${y}`).join(" ")}
               fill="none"
-              stroke="#405E67"
-              strokeWidth={3}
+              stroke="rgba(255,255,255,0.4)"
+              strokeWidth={12}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+
+            {/* Net worth line */}
+            <Polyline
+              points={netWorthCoords.map(({ x, y }) => `${x},${y}`).join(" ")}
+              fill="none"
+              stroke={theme.netWorth.line}
+              strokeWidth={6}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
@@ -110,6 +205,14 @@ export function BalanceSheetChart({ points }: Props) {
             }}
           />
         )}
+
+        <LinearGradient
+          colors={['#F3E7D3', 'rgba(243,231,211,0)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '30%' }}
+          pointerEvents="none"
+        />
       </View>
 
       {!hasTrend && (

@@ -274,4 +274,11 @@ Git Bash causes issues — always use PowerShell in VS Code terminal.
 **Left off at:**
 Skipper implementing: net worth line thicker, x-axis more prominent, CATEGORY_ORDER master alignment, Depth gradient border start offset. Commit and push to GitHub pending.
 
-**Immediate next
+**Immediate next session:**
+- Verify final Skipper changes look correct on device
+- Commit and push to GitHub
+- Begin P2 zoom transition
+
+---
+
+*End of handoff document. Regenerate at end of each session.*

@@ -1,4 +1,11 @@
+import { getToken } from './auth';
+
 export const API_BASE = "http://192.168.1.158:4000";
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getToken();
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
 
 export type NetWorthPoint = {
   as_of_date: string;
@@ -13,17 +20,15 @@ export async function fetchNetWorth(): Promise<NetWorthPoint[]> {
   fromDate.setDate(toDate.getDate() - 30);
 
   const from = formatDateYYYYMMDD(fromDate);
-  const to = formatDateYYYYMMDD(toDate); 
-  
+  const to = formatDateYYYYMMDD(toDate);
 
-    const res = await fetch(
+  const res = await fetch(
     `${API_BASE}/chart/networth?from=${from}&to=${to}`,
-
     {
       headers: {
-        "x-user-id": "user_1"
-      }
-    }
+        ...await getAuthHeaders(),
+      },
+    },
   );
 
   if (!res.ok) {
@@ -32,6 +37,7 @@ export async function fetchNetWorth(): Promise<NetWorthPoint[]> {
 
   return res.json();
 }
+
 type CompositionPosition = {
   id: string;
   name: string;
@@ -56,7 +62,7 @@ export type CompositionSummary = {
 export async function fetchComposition(): Promise<CompositionSummary> {
   const res = await fetch(`${API_BASE}/composition/summary`, {
     headers: {
-      "x-user-id": "user_1",
+      ...await getAuthHeaders(),
     },
   });
 
@@ -91,7 +97,7 @@ export async function fetchCompositionChart(): Promise<CompositionChartData> {
     `${API_BASE}/chart/composition?from=${from}&to=${to}`,
     {
       headers: {
-        "x-user-id": "user_1",
+        ...await getAuthHeaders(),
       },
     },
   );

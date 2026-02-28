@@ -1,6 +1,11 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express, { NextFunction, Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { pool } from './db.js';
 import { AssetCategory, BalanceSheetSide, LiabilityCategory, PositionCategory, PositionSourceType } from '@finance-clarity/shared';
+import { authRouter, JWT_SECRET } from './auth.js';
 
 type AuthedRequest = Request & { userId?: string };
 
@@ -8,20 +13,39 @@ const app = express();
 app.use(express.json());
 
 const authMiddleware = (req: AuthedRequest, res: Response, next: NextFunction): void => {
-  const userId = req.header('x-user-id');
+  const authHeader = req.header('Authorization');
 
-  if (!userId) {
-    res.status(401).json({ error: 'Missing x-user-id header' });
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload & { userId: string };
+      req.userId = decoded.userId;
+      next();
+      return;
+    } catch {
+      // invalid token — fall through to legacy header
+    }
+  }
+
+  // Legacy: x-user-id header (kept during auth transition)
+  const legacyUserId = req.header('x-user-id');
+  if (legacyUserId) {
+    req.userId = legacyUserId;
+    next();
     return;
   }
 
-  req.userId = userId;
+  // Fallback so existing dev setup doesn't break during transition
+  req.userId = 'user_1';
   next();
 };
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
+
+// Auth routes are public — mount before authMiddleware
+app.use('/auth', authRouter);
 
 app.use(authMiddleware);
 
@@ -364,6 +388,56 @@ app.get('/chart/composition', async (req: AuthedRequest, res: Response) => {
   });
 
   res.json({ dates, categories, netWorth });
+});
+
+app.post('/onboarding/complete', async (req: AuthedRequest, res: Response) => {
+  if (!req.userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const body = req.body;
+  if (!Array.isArray(body)) {
+    res.status(400).json({ error: 'Expected array' });
+    return;
+  }
+
+  type OnboardingEntry = { category: string; side: string; label: string; value: number };
+  const toInsert: OnboardingEntry[] = (body as OnboardingEntry[]).filter(
+    e => typeof e.value === 'number' && e.value !== 0 &&
+         allowedCategories.has(e.category) &&
+         allowedSides.has(e.side as BalanceSheetSide)
+  );
+
+  const today = new Date().toISOString().slice(0, 10);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    for (const entry of toInsert) {
+      const { rows } = await client.query(
+        `INSERT INTO positions (user_id, name, side, category, currency_code)
+         VALUES ($1, $2, $3, $4, 'USD')
+         RETURNING id`,
+        [req.userId, entry.label, entry.side, entry.category],
+      );
+
+      await client.query(
+        `INSERT INTO valuation_snapshots (user_id, position_id, as_of_date, value, source_type, source_details)
+         VALUES ($1, $2, $3, $4, 'manual', '{}')`,
+        [req.userId, rows[0].id, today, entry.value],
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Onboarding complete', positionCount: toInsert.length });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('onboarding/complete error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
 });
 
 const port = Number(process.env.PORT ?? 4000);

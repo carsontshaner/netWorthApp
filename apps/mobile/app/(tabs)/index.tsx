@@ -11,9 +11,11 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BalanceSheetChart } from "@/components/balance-sheet-chart";
 import { fetchCompositionChart, type CompositionChartData } from "@/src/api";
+import { clearToken } from "@/src/auth";
 
 const APP_NAME = "Harbor";
 
@@ -112,6 +114,7 @@ function ChartLegend() {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const [data, setData] = useState<CompositionChartData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +127,14 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F3E7D3" }}>
+      {/* Temporary sign-out button — remove before launch */}
+      <Pressable
+        onPress={async () => { await clearToken(); router.replace('/landing'); }}
+        style={{ position: 'absolute', top: insets.top + 12, right: 20, zIndex: 10 }}
+      >
+        <Text style={{ fontSize: 12, color: 'rgba(39,35,28,0.40)' }}>Sign out</Text>
+      </Pressable>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}

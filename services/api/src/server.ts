@@ -5,7 +5,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import { pool } from './db.js';
-import { AssetCategory, BalanceSheetSide, LiabilityCategory, PositionCategory, PositionSourceType } from '@finance-clarity/shared';
+import { AssetCategory, BalanceSheetSide, LiabilityCategory, PositionCategory, PositionSourceType } from './shared.js';
 import { authRouter, JWT_SECRET } from './auth.js';
 
 type AuthedRequest = Request & { userId?: string };

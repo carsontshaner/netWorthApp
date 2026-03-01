@@ -1,8 +1,18 @@
+import Constants from 'expo-constants';
 import { getToken } from './auth';
 
-export const API_BASE = __DEV__
-  ? 'http://localhost:3000'
-  : 'https://finance-clarityapi-production.up.railway.app';
+const getApiUrl = () => {
+  // If running in Expo Go on a physical device, use the production API
+  if (Constants.executionEnvironment === 'storeClient') {
+    return 'https://finance-clarityapi-production.up.railway.app';
+  }
+  // Local dev (simulator or connected device on same network)
+  return __DEV__
+    ? 'http://localhost:3000'
+    : 'https://finance-clarityapi-production.up.railway.app';
+};
+
+export const API_BASE = getApiUrl();
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const token = await getToken();

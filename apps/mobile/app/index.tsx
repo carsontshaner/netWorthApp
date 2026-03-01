@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect } from 'expo-router';
-import { getToken, clearToken } from '@/src/auth';
+import { getToken, clearToken, isGuestSession } from '@/src/auth';
 import { API_BASE } from '@/src/api';
 
-type Destination = '/(tabs)' | '/landing' | '/onboarding';
+type Destination = '/(tabs)' | '/landing' | '/onboarding' | '/welcome-back';
 
 export default function Index() {
   const [destination, setDestination] = useState<Destination | null>(null);
@@ -14,7 +14,11 @@ export default function Index() {
       try {
         const token = await getToken();
         if (!token) {
-          setDestination('/landing');
+          if (await isGuestSession()) {
+            setDestination('/(tabs)');
+          } else {
+            setDestination('/landing');
+          }
           return;
         }
 
@@ -30,7 +34,7 @@ export default function Index() {
         }
 
         const positions = await res.json();
-        setDestination(positions.length === 0 ? '/onboarding' : '/(tabs)');
+        setDestination(positions.length === 0 ? '/onboarding' : '/welcome-back');
       } catch {
         // Network error or any other failure — clear token and go to landing
         await clearToken();

@@ -9,28 +9,62 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { requestOtp } from '@/src/auth';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { requestOtp, requestOtpPhone } from '@/src/auth';
+import { harborWordmark } from '@/src/theme';
+
+function detectInputType(input: string): 'email' | 'phone' | 'unknown' {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const phoneRegex = /^[\+]?[\d\s\-\(\)]{10,}$/;
+  if (emailRegex.test(input)) return 'email';
+  if (phoneRegex.test(input.replace(/\s/g, ''))) return 'phone';
+  return 'unknown';
+}
 
 export default function EmailScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const { mode, mergeGuest } = useLocalSearchParams<{ mode?: string; mergeGuest?: string }>();
+  const isSignIn = mode === 'signin';
+  const [contact, setContact] = useState('');
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const canSubmit = email.trim().length > 0 && !loading;
+  const trimmed = contact.trim();
+  const inputType = trimmed.length > 0 ? detectInputType(trimmed) : 'unknown';
+  const canSubmit = trimmed.length > 0 && inputType !== 'unknown' && !loading;
 
   async function handleSend() {
+    if (inputType === 'unknown') {
+      setError('Enter a valid email or phone number');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      await requestOtp(email.trim());
-      router.push(`/auth/otp?email=${encodeURIComponent(email.trim())}`);
+      const mergeParam = mergeGuest === 'true' ? '&mergeGuest=true' : '';
+      if (inputType === 'email') {
+        await requestOtp(trimmed);
+        router.push(`/auth/otp?contact=${encodeURIComponent(trimmed)}&type=email${mergeParam}`);
+      } else {
+        await requestOtpPhone(trimmed);
+        router.push(`/auth/otp?contact=${encodeURIComponent(trimmed)}&type=phone${mergeParam}`);
+      }
     } catch {
       setError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  let hint: { text: string; color: string } | null = null;
+  if (trimmed.length > 0) {
+    if (inputType === 'email') {
+      hint = { text: "We'll send a code to this email", color: 'rgba(39,35,28,0.45)' };
+    } else if (inputType === 'phone') {
+      hint = { text: "We'll send a code to this number via SMS", color: 'rgba(39,35,28,0.45)' };
+    } else if (trimmed.length > 3) {
+      hint = { text: 'Enter a valid email or phone number', color: 'rgba(180,60,60,0.70)' };
     }
   }
 
@@ -50,16 +84,7 @@ export default function EmailScreen() {
       >
         <View style={{ flex: 1, paddingHorizontal: 40, justifyContent: 'center' }}>
           {/* Wordmark */}
-          <Text
-            style={{
-              fontSize: 48,
-              fontWeight: '300',
-              color: '#27231C',
-              letterSpacing: 5.5,
-              textAlign: 'center',
-              marginBottom: 48,
-            }}
-          >
+          <Text style={{ ...harborWordmark, textAlign: 'center', marginBottom: 48 }}>
             Harbor
           </Text>
 
@@ -72,7 +97,7 @@ export default function EmailScreen() {
               marginBottom: 8,
             }}
           >
-            What's your email?
+            {isSignIn ? 'Welcome back.' : "What's your email?"}
           </Text>
 
           {/* Subheading */}
@@ -85,16 +110,18 @@ export default function EmailScreen() {
               lineHeight: 22,
             }}
           >
-            We'll send you a 6-digit code to sign in.
+            {isSignIn
+              ? "Enter your email or phone and we'll send you a code to sign in."
+              : "We'll send you a 6-digit code to sign in."}
           </Text>
 
-          {/* Email input */}
+          {/* Contact input */}
           <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
+            value={contact}
+            onChangeText={setContact}
+            placeholder="Email or phone number"
             placeholderTextColor="rgba(39,35,28,0.35)"
-            keyboardType="email-address"
+            keyboardType="default"
             autoCapitalize="none"
             autoCorrect={false}
             autoFocus
@@ -111,10 +138,17 @@ export default function EmailScreen() {
               fontSize: 16,
               color: '#27231C',
               borderColor: focused ? '#5B4A3A' : 'rgba(39,35,28,0.20)',
-              marginBottom: 16,
+              marginBottom: hint ? 6 : 16,
               backgroundColor: 'transparent',
             }}
           />
+
+          {/* Hint text */}
+          {hint && (
+            <Text style={{ fontSize: 12, color: hint.color, marginBottom: 16 }}>
+              {hint.text}
+            </Text>
+          )}
 
           {/* CTA */}
           <Pressable

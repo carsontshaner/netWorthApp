@@ -2,11 +2,10 @@ import React, { useEffect, useRef } from 'react';
 import { Alert, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { saveGuestSession } from '@/src/auth';
+import { clearToken } from '@/src/auth';
 import { harborWordmark } from '@/src/theme';
 
 // Each wave path covers 0–375, doubled to 0–750 for seamless horizontal scroll.
-// Amplitude doubled from original (~±15px → ±30px).
 const WAVE_1 =
   'M0,20 C60,-10 120,60 180,20 C240,-10 300,60 375,20 ' +
   'C435,-10 495,60 555,20 C615,-10 675,60 750,20 L750,110 L0,110 Z';
@@ -17,7 +16,7 @@ const WAVE_3 =
   'M0,55 C80,25 160,82 240,55 C300,35 340,72 375,55 ' +
   'C455,25 535,82 615,55 C675,35 715,72 750,55 L750,110 L0,110 Z';
 
-export default function LandingScreen() {
+export default function WelcomeBackScreen() {
   const router = useRouter();
   const wave1Offset = useRef(new Animated.Value(0)).current;
   const wave2Offset = useRef(new Animated.Value(0)).current;
@@ -50,19 +49,18 @@ export default function LandingScreen() {
   const wave2TranslateX = wave2Offset.interpolate({ inputRange: [0, 1], outputRange: [0, -375] });
   const wave3TranslateX = wave3Offset.interpolate({ inputRange: [0, 1], outputRange: [0, -375] });
 
-  function handleGuestStart() {
+  function handleSignOut() {
     Alert.alert(
-      'Guest mode',
-      'Your data will be saved on this device only. ' +
-      'Create an account anytime to back it up and ' +
-      'access it from other devices.',
+      'Sign out',
+      'Are you sure you want to sign out of Harbor?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Continue as guest',
+          text: 'Sign out',
+          style: 'destructive',
           onPress: async () => {
-            await saveGuestSession();
-            router.replace('/onboarding');
+            await clearToken();
+            router.replace('/landing');
           },
         },
       ],
@@ -108,9 +106,7 @@ export default function LandingScreen() {
           <Path d="M89,36 C95,30 102,30 104,36 C102,38 98,38 94,40 Z" fill="#4C6A8A" />
         </Svg>
 
-        <Text style={styles.tagline}>
-          {'Your complete financial picture,\ncalm and clear.'}
-        </Text>
+        <Text style={styles.tagline}>Welcome back.</Text>
       </View>
 
       {/* ─── LAYER 2 — WAVES ─── */}
@@ -140,11 +136,9 @@ export default function LandingScreen() {
           {/* Crest highlight lines — animated with wave2 */}
           <Animated.View style={[styles.waveTile, { transform: [{ translateX: wave2TranslateX }] }]}>
             <Svg width={750} height={110} viewBox="0 0 750 110">
-              {/* First set (x: 40, 190, 340) */}
               <Path d="M10,25 Q40,15 70,25"   stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} fill="none" />
               <Path d="M160,35 Q190,25 220,35" stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} fill="none" />
               <Path d="M310,22 Q340,12 370,22" stroke="rgba(255,255,255,0.5)" strokeWidth={1.2} fill="none" />
-              {/* Second set — offset by 375 for seamless loop */}
               <Path d="M385,25 Q415,15 445,25"  stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} fill="none" />
               <Path d="M535,35 Q565,25 595,35"  stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} fill="none" />
               <Path d="M685,22 Q715,12 745,22"  stroke="rgba(255,255,255,0.5)" strokeWidth={1.2} fill="none" />
@@ -160,39 +154,14 @@ export default function LandingScreen() {
       <View style={styles.ctaLayer}>
         <Pressable
           style={styles.ctaButton}
-          onPress={() => router.push('/auth/email')}
+          onPress={() => router.replace('/(tabs)')}
         >
-          <Text style={styles.ctaButtonText}>See your Net Worth  →</Text>
+          <Text style={styles.ctaButtonText}>See my Net Worth →</Text>
         </Pressable>
 
-        <Text style={styles.signInText}>
-          {'Already have an account? '}
-          <Text style={styles.signInBold} onPress={() => router.push('/auth/email?mode=signin')}>
-            Sign in
-          </Text>
+        <Text style={styles.signOutText} onPress={handleSignOut}>
+          Not you? Sign out
         </Text>
-
-        <Pressable
-          onPress={handleGuestStart}
-          style={{
-            marginTop: 12,
-            paddingVertical: 14,
-            paddingHorizontal: 24,
-            borderRadius: 14,
-            borderWidth: 1.5,
-            borderColor: 'rgba(243,231,211,0.35)',
-            width: '100%',
-            alignItems: 'center',
-          }}
-        >
-          <Text style={{
-            fontSize: 15,
-            fontWeight: '400',
-            color: 'rgba(243,231,211,0.80)',
-          }}>
-            Start as guest
-          </Text>
-        </Pressable>
       </View>
     </View>
   );
@@ -224,11 +193,10 @@ const styles = StyleSheet.create({
     marginBottom: 36,
   },
   tagline: {
-    fontSize: 15,
+    fontSize: 28,
     fontWeight: '300',
-    color: 'rgba(39,35,28,0.60)',
+    color: '#27231C',
     textAlign: 'center',
-    lineHeight: 24,
   },
 
   // Layer 2 — waves
@@ -285,13 +253,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textAlign: 'center',
   },
-  signInText: {
+  signOutText: {
     color: 'rgba(243,231,211,0.75)',
     fontSize: 13,
     fontWeight: '300',
-  },
-  signInBold: {
-    color: '#F3E7D3',
-    fontWeight: '500',
   },
 });

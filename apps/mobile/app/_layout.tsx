@@ -16,10 +16,10 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack initialRouteName="landing">
         <Stack.Screen name="landing" options={{ headerShown: false }} />
-        <Stack.Screen name="auth/email" options={{ headerShown: false }} />
-        <Stack.Screen name="auth/otp" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/email" options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="auth/otp" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="auth/signin" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen
           name="composition"
           options={{
@@ -31,6 +31,7 @@ export default function RootLayout() {
             animation: "fade_from_bottom",
           }}
         />
+        <Stack.Screen name="welcome-back" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>

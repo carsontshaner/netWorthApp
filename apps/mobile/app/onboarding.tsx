@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   SafeAreaView,
@@ -11,9 +12,21 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { getToken } from '@/src/auth';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getToken, isGuestSession, saveGuestData } from '@/src/auth';
 import { API_BASE } from '@/src/api';
-import { CATEGORY_ORDER, categoryColor } from '@/src/theme';
+import { CATEGORY_ORDER, categoryColor, harborWordmark } from '@/src/theme';
+import BackButton from '@/components/BackButton';
+
+function formatCurrencyInput(raw: string): string {
+  const clean = raw.replace(/[^0-9.]/g, '');
+  const parts = clean.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  if (parts.length > 1) {
+    return parts[0] + '.' + parts[1].slice(0, 2);
+  }
+  return parts[0];
+}
 
 const CATEGORY_LABELS: Record<string, string> = {
   cash_asset:               'Cash & Checking',
@@ -32,58 +45,130 @@ const CATEGORY_LABELS: Record<string, string> = {
   other_liability:          'Other Liabilities',
 };
 
-type EntryState = {
-  [key: string]: { value: string; skipped: boolean };
+type Entry = {
+  id: string;
+  side: 'asset' | 'liability';
+  category: string | null;
+  value: string;
+  label: string;
+  skipped: boolean;
 };
 
-function makeKey(category: string, side: string) {
-  return `${category}_${side}`;
-}
+const ASSET_CATEGORIES = CATEGORY_ORDER.filter(e => e.side === 'asset');
+const LIABILITY_CATEGORIES = CATEGORY_ORDER.filter(e => e.side === 'liability');
 
-function initState(): EntryState {
-  const state: EntryState = {};
-  for (const { category, side } of CATEGORY_ORDER) {
-    state[makeKey(category, side)] = { value: '', skipped: false };
-  }
-  return state;
+function newEntry(side: 'asset' | 'liability'): Entry {
+  return {
+    id: String(Date.now() + Math.random()),
+    side,
+    category: null,
+    value: '',
+    label: '',
+    skipped: false,
+  };
 }
-
-function isComplete(state: EntryState): boolean {
-  return Object.values(state).every(e => e.skipped || e.value !== '');
-}
-
-const ASSETS = CATEGORY_ORDER.filter(e => e.side === 'asset');
-const LIABILITIES = CATEGORY_ORDER.filter(e => e.side === 'liability');
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const [entries, setEntries] = useState<EntryState>(initState);
-  const [startChoice, setStartChoice] = useState<'assets' | 'liabilities' | null>(null);
-  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
+
+  const [activeSide, setActiveSide] = useState<'assets' | 'liabilities' | null>(null);
+  const [assetEntries, setAssetEntries] = useState<Entry[]>([]);
+  const [liabilityEntries, setLiabilityEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
 
-  function updateEntry(key: string, patch: Partial<EntryState[string]>) {
-    setEntries(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  // Initialize with one empty entry when a side is first selected
+  useEffect(() => {
+    if (!activeSide) return;
+    if (activeSide === 'assets') {
+      setAssetEntries(prev => prev.length === 0 ? [newEntry('asset')] : prev);
+    } else {
+      setLiabilityEntries(prev => prev.length === 0 ? [newEntry('liability')] : prev);
+    }
+  }, [activeSide]);
+
+  function getEntries(): Entry[] {
+    return activeSide === 'assets' ? assetEntries : liabilityEntries;
   }
 
-  const completed = Object.values(entries).filter(e => e.skipped || e.value !== '').length;
-  const total = CATEGORY_ORDER.length;
+  function setEntries(updater: (prev: Entry[]) => Entry[]) {
+    if (activeSide === 'assets') {
+      setAssetEntries(updater);
+    } else {
+      setLiabilityEntries(updater);
+    }
+  }
+
+  function updateEntry(id: string, patch: Partial<Entry>) {
+    setEntries(prev => {
+      const updated = prev.map(e => e.id === id ? { ...e, ...patch } : e);
+      // Auto-append new empty row when last entry becomes filled
+      const last = updated[updated.length - 1];
+      if (last && last.id === id && last.category !== null && last.value !== '') {
+        return [...updated, newEntry(last.side)];
+      }
+      return updated;
+    });
+  }
+
+  function removeEntry(id: string) {
+    setEntries(prev => prev.filter(e => e.id !== id));
+  }
+
+  function openCategoryModal(entryId: string) {
+    setEditingEntryId(entryId);
+    setModalVisible(true);
+  }
+
+  function selectCategory(category: string) {
+    if (editingEntryId) {
+      updateEntry(editingEntryId, { category });
+    }
+    setModalVisible(false);
+    setEditingEntryId(null);
+  }
+
+  const currentSide = activeSide === 'assets' ? 'asset'
+    : activeSide === 'liabilities' ? 'liability'
+    : null;
+  const currentEntries = currentSide === 'asset' ? assetEntries : currentSide === 'liability' ? liabilityEntries : [];
+  const currentCategories = currentSide === 'asset' ? ASSET_CATEGORIES : LIABILITY_CATEGORIES;
+
+  // All filled entries across both sides, using each entry's own side value
+  const allEntries = [...assetEntries, ...liabilityEntries];
+  const filledEntries = allEntries.filter(e => e.category !== null && e.value !== '');
+  const canSubmit = filledEntries.length > 0 && !loading;
 
   async function handleSubmit() {
     setLoading(true);
     setError('');
     try {
-      const token = await getToken();
-      const payload = CATEGORY_ORDER.flatMap(({ category, side }) => {
-        const key = makeKey(category, side);
-        const e = entries[key];
-        const label = CATEGORY_LABELS[key] ?? category;
-        if (e.skipped) return [{ category, side, label, value: 0 }];
-        if (e.value !== '') return [{ category, side, label, value: parseFloat(e.value.replace(/,/g, '')) }];
-        return [];
-      });
+      const payload = filledEntries.map(e => ({
+        category: e.category!,
+        side: e.side,
+        label: e.label || (CATEGORY_LABELS[`${e.category}_${e.side}`] ?? e.category!),
+        value: parseFloat(e.value.replace(/,/g, '')),
+      }));
 
+      if (await isGuestSession()) {
+        await saveGuestData({
+          positions: payload.map(p => ({
+            id: String(Date.now() + Math.random()),
+            category: p.category,
+            side: p.side,
+            label: p.label,
+            value: p.value,
+            createdAt: new Date().toISOString(),
+          })),
+        });
+        router.replace('/(tabs)');
+        return;
+      }
+
+      const token = await getToken();
       const res = await fetch(`${API_BASE}/onboarding/complete`, {
         method: 'POST',
         headers: {
@@ -102,114 +187,111 @@ export default function OnboardingScreen() {
     }
   }
 
-  function renderCategoryRow(category: string, side: 'asset' | 'liability') {
-    const key = makeKey(category, side);
-    const entry = entries[key];
-    const label = CATEGORY_LABELS[key] ?? category;
-    const color = categoryColor(category, side, 0, 1);
+  function renderEntryRow(entry: Entry) {
+    const color = entry.category
+      ? categoryColor(entry.category, entry.side, 0, 1)
+      : 'rgba(39,35,28,0.20)';
+    const catLabel = entry.category
+      ? (CATEGORY_LABELS[`${entry.category}_${entry.side}`] ?? entry.category)
+      : null;
+    const placeholder = currentSide === 'asset' ? 'Add an asset' : 'Add a liability';
+    const showRemove = currentEntries.length > 1;
 
     return (
       <View
-        key={key}
+        key={entry.id}
         style={{
-          paddingVertical: 16,
-          borderBottomWidth: 1,
-          borderBottomColor: 'rgba(39,35,28,0.08)',
+          backgroundColor: 'rgba(255,255,255,0.5)',
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 12,
         }}
       >
-        {/* Top row: dot + label + skip control */}
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
-          <Text
-            style={{
-              flex: 1,
-              marginLeft: 10,
-              fontSize: 16,
-              fontWeight: '400',
-              color: '#27231C',
-            }}
-          >
-            {label}
-          </Text>
+        {/* Row 1: Category selector */}
+        <Pressable
+          onPress={() => openCategoryModal(entry.id)}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            {entry.category && (
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color, marginRight: 8 }} />
+            )}
+            <Text style={{ fontSize: 16, color: catLabel ? '#27231C' : 'rgba(39,35,28,0.40)' }}>
+              {catLabel ?? placeholder}
+            </Text>
+          </View>
+          <Text style={{ fontSize: 16, color: 'rgba(39,35,28,0.40)' }}>⌄</Text>
+        </Pressable>
 
-          {entry.skipped ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 12, color: 'rgba(39,35,28,0.40)' }}>Skipped</Text>
-              <Pressable onPress={() => updateEntry(key, { skipped: false, value: '' })}>
-                <Text style={{ fontSize: 12, color: 'rgba(39,35,28,0.55)', textDecorationLine: 'underline' }}>
-                  undo
-                </Text>
-              </Pressable>
+        {/* Rows 2–3: Value + Label (shown after category selected) */}
+        {entry.category !== null && (
+          <>
+            <View style={{ marginTop: 8 }}>
+              <Text style={{ fontSize: 11, color: 'rgba(39,35,28,0.45)', marginBottom: 2 }}>Value</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                <Text style={{ fontSize: 20, fontWeight: '300', color: '#27231C', marginRight: 4 }}>$</Text>
+                <TextInput
+                  value={entry.value}
+                  onChangeText={(raw) => {
+                    const formatted = formatCurrencyInput(raw);
+                    updateEntry(entry.id, { value: formatted });
+                  }}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor="rgba(39,35,28,0.30)"
+                  style={{
+                    flex: 1,
+                    fontSize: 20,
+                    fontWeight: '300',
+                    color: '#27231C',
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(39,35,28,0.15)',
+                  }}
+                />
+              </View>
             </View>
-          ) : entry.value === '' ? (
-            <Pressable onPress={() => updateEntry(key, { skipped: true })}>
-              <Text style={{ fontSize: 12, color: 'rgba(39,35,28,0.40)' }}>Skip</Text>
-            </Pressable>
-          ) : null}
-        </View>
 
-        {/* Dollar input (hidden when skipped) */}
-        {!entry.skipped && (
-          <TextInput
-            value={entry.value}
-            onChangeText={v => updateEntry(key, { value: v })}
-            keyboardType="numeric"
-            placeholder="$0"
-            placeholderTextColor="rgba(39,35,28,0.30)"
-            onFocus={() => setFocusedKey(key)}
-            onBlur={() => setFocusedKey(null)}
-            style={{
-              fontSize: 24,
-              fontWeight: '300',
-              color: '#27231C',
-              borderBottomWidth: 1.5,
-              borderBottomColor: focusedKey === key ? '#5B4A3A' : 'rgba(39,35,28,0.20)',
-              paddingBottom: 4,
-              marginTop: 8,
-            }}
-          />
+            <View style={{ marginTop: 8 }}>
+              <View style={{ flexDirection: 'row', gap: 4, marginBottom: 2 }}>
+                <Text style={{ fontSize: 11, color: 'rgba(39,35,28,0.45)' }}>Label</Text>
+                <Text style={{ fontSize: 11, color: 'rgba(39,35,28,0.30)' }}>(optional)</Text>
+              </View>
+              <TextInput
+                value={entry.label}
+                onChangeText={v => updateEntry(entry.id, { label: v })}
+                placeholder="e.g. 'Toyota Camry'"
+                placeholderTextColor="rgba(39,35,28,0.30)"
+                style={{
+                  fontSize: 14,
+                  color: 'rgba(39,35,28,0.60)',
+                  borderBottomWidth: 1,
+                  borderBottomColor: 'rgba(39,35,28,0.10)',
+                  paddingBottom: 4,
+                }}
+              />
+              <Text style={{ fontSize: 11, color: 'rgba(39,35,28,0.35)', marginTop: 4 }}>
+                Give this entry a name (e.g. 'Primary home', 'Chase checking')
+              </Text>
+            </View>
+          </>
+        )}
+
+        {/* Row 4: Remove */}
+        {showRemove && (
+          <Pressable onPress={() => removeEntry(entry.id)} style={{ alignSelf: 'flex-end', marginTop: 8 }}>
+            <Text style={{ fontSize: 12, color: 'rgba(39,35,28,0.35)' }}>Remove</Text>
+          </Pressable>
         )}
       </View>
     );
   }
 
-  function renderSection(
-    items: ReadonlyArray<{ category: string; side: 'asset' | 'liability' }>,
-    side: 'asset' | 'liability',
-  ) {
-    const title = side === 'asset' ? 'Assets' : 'Liabilities';
-    const stripColor = side === 'asset' ? '#7FB3C8' : '#8B6347';
-
-    return (
-      <View key={side} style={{ marginBottom: 40 }}>
-        <Text
-          style={{
-            fontSize: 13,
-            fontWeight: '500',
-            letterSpacing: 1.5,
-            textTransform: 'uppercase',
-            color: 'rgba(39,35,28,0.45)',
-            marginBottom: 16,
-          }}
-        >
-          {title}
-        </Text>
-
-        {/* Left border strip + content */}
-        <View style={{ flexDirection: 'row' }}>
-          <View style={{ width: 3, borderRadius: 2, backgroundColor: stripColor }} />
-          <View style={{ flex: 1, paddingLeft: 16 }}>
-            {items.map(({ category, side: s }) => renderCategoryRow(category, s))}
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  const canSubmit = isComplete(entries) && !loading;
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F3E7D3' }}>
+      {/* Back button — top left */}
+      <View style={{ position: 'absolute', top: insets.top + 12, left: 20, zIndex: 10 }}>
+        <BackButton label="Chart" onPress={() => router.replace('/(tabs)')} />
+      </View>
+
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -219,60 +301,36 @@ export default function OnboardingScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {/* Wordmark */}
-          <Text
-            style={{
-              fontSize: 48,
-              fontWeight: '300',
-              color: '#27231C',
-              letterSpacing: 5.5,
-              textAlign: 'center',
-              marginTop: 32,
-              marginBottom: 32,
-            }}
-          >
+          <Text style={{ ...harborWordmark, textAlign: 'center', marginTop: 32, marginBottom: 32 }}>
             Harbor
           </Text>
 
           {/* Heading */}
-          <Text
-            style={{
-              fontSize: 28,
-              fontWeight: '300',
-              color: '#27231C',
-              marginBottom: 8,
-            }}
-          >
+          <Text style={{ fontSize: 28, fontWeight: '300', color: '#27231C', marginBottom: 8 }}>
             Let's build your picture.
           </Text>
 
           {/* Subheading */}
-          <Text
-            style={{
-              fontSize: 15,
-              fontWeight: '300',
-              color: 'rgba(39,35,28,0.60)',
-              marginBottom: 40,
-            }}
-          >
+          <Text style={{ fontSize: 15, fontWeight: '300', color: 'rgba(39,35,28,0.60)', marginBottom: 32 }}>
             Start wherever feels right. You can always update these later.
           </Text>
 
-          {/* Start choice cards */}
-          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 40 }}>
+          {/* Toggle cards — always visible */}
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 32 }}>
             <Pressable
-              onPress={() => setStartChoice('assets')}
+              onPress={() => setActiveSide('assets')}
               style={{
                 flex: 1,
                 backgroundColor: 'rgba(167,214,207,0.25)',
-                borderWidth: 1.5,
-                borderColor: 'rgba(127,179,200,0.4)',
+                borderWidth: activeSide === 'assets' ? 2 : 1.5,
+                borderColor: activeSide === 'assets' ? '#7FB3C8' : 'rgba(127,179,200,0.4)',
                 borderRadius: 16,
                 padding: 20,
-                opacity: startChoice === 'liabilities' ? 0.5 : 1,
+                opacity: activeSide === 'liabilities' ? 0.5 : 1,
               }}
             >
               <Text style={{ fontSize: 16, fontWeight: '500', color: '#27231C', marginBottom: 4 }}>
-                Start with Assets
+                Add your Assets
               </Text>
               <Text style={{ fontSize: 13, fontWeight: '300', color: 'rgba(39,35,28,0.60)' }}>
                 What you own
@@ -280,19 +338,19 @@ export default function OnboardingScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => setStartChoice('liabilities')}
+              onPress={() => setActiveSide('liabilities')}
               style={{
                 flex: 1,
                 backgroundColor: 'rgba(200,184,154,0.25)',
-                borderWidth: 1.5,
-                borderColor: 'rgba(139,99,71,0.3)',
+                borderWidth: activeSide === 'liabilities' ? 2 : 1.5,
+                borderColor: activeSide === 'liabilities' ? '#8B6347' : 'rgba(139,99,71,0.3)',
                 borderRadius: 16,
                 padding: 20,
-                opacity: startChoice === 'assets' ? 0.5 : 1,
+                opacity: activeSide === 'assets' ? 0.5 : 1,
               }}
             >
               <Text style={{ fontSize: 16, fontWeight: '500', color: '#27231C', marginBottom: 4 }}>
-                Start with Liabilities
+                Add your Liabilities
               </Text>
               <Text style={{ fontSize: 13, fontWeight: '300', color: 'rgba(39,35,28,0.60)' }}>
                 What you owe
@@ -300,32 +358,10 @@ export default function OnboardingScreen() {
             </Pressable>
           </View>
 
-          {/* Category sections — only shown after start choice */}
-          {startChoice !== null && (
+          {/* Entry rows — only for active side */}
+          {activeSide !== null && (
             <>
-              {startChoice === 'assets' ? (
-                <>
-                  {renderSection(ASSETS, 'asset')}
-                  {renderSection(LIABILITIES, 'liability')}
-                </>
-              ) : (
-                <>
-                  {renderSection(LIABILITIES, 'liability')}
-                  {renderSection(ASSETS, 'asset')}
-                </>
-              )}
-
-              {/* Progress hint */}
-              <Text
-                style={{
-                  fontSize: 13,
-                  color: 'rgba(39,35,28,0.50)',
-                  textAlign: 'center',
-                  marginBottom: 24,
-                }}
-              >
-                {completed} of {total} categories complete
-              </Text>
+              {currentEntries.map(entry => renderEntryRow(entry))}
 
               {/* Submit button */}
               <Pressable
@@ -339,13 +375,14 @@ export default function OnboardingScreen() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   opacity: canSubmit ? 1 : 0.4,
+                  marginTop: 8,
                 }}
               >
                 {loading ? (
                   <ActivityIndicator color="#F3E7D3" />
                 ) : (
                   <Text style={{ fontSize: 16, fontWeight: '500', color: '#F3E7D3' }}>
-                    See my Net Worth
+                    Update my picture
                   </Text>
                 )}
               </Pressable>
@@ -355,21 +392,61 @@ export default function OnboardingScreen() {
                   {error}
                 </Text>
               ) : null}
-
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: 'rgba(39,35,28,0.40)',
-                  textAlign: 'center',
-                  marginTop: 12,
-                }}
-              >
-                You can update any of these later.
-              </Text>
             </>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Category selector modal */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }}
+          onPress={() => setModalVisible(false)}
+        />
+        <View
+          style={{
+            backgroundColor: '#F3E7D3',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            paddingBottom: insets.bottom + 16,
+            maxHeight: '60%',
+          }}
+        >
+          <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(39,35,28,0.10)' }}>
+            <Text style={{ fontSize: 16, fontWeight: '500', color: '#27231C', textAlign: 'center' }}>
+              {currentSide === 'asset' ? 'Select Asset Type' : 'Select Liability Type'}
+            </Text>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {currentCategories.map(({ category, side }) => {
+              const label = CATEGORY_LABELS[`${category}_${side}`] ?? category;
+              const color = categoryColor(category, side, 0, 1);
+              return (
+                <Pressable
+                  key={`${category}_${side}`}
+                  onPress={() => selectCategory(category)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: 20,
+                    paddingVertical: 14,
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(39,35,28,0.06)',
+                  }}
+                >
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color, marginRight: 12 }} />
+                  <Text style={{ fontSize: 16, color: '#27231C' }}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

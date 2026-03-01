@@ -55,6 +55,14 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function normalizePhone(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  if (digits.length > 7) return `+${digits}`;
+  return null;
+}
+
 // ─── Auth router ──────────────────────────────────────────────────────────────
 
 export const authRouter = Router();
@@ -153,6 +161,104 @@ authRouter.post('/verify-otp', async (req: Request, res: Response): Promise<void
     });
   } catch (err) {
     console.error('verify-otp error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /auth/request-otp/phone
+authRouter.post('/request-otp/phone', async (req: Request, res: Response): Promise<void> => {
+  const { phone: rawPhone } = req.body;
+
+  if (!rawPhone || typeof rawPhone !== 'string') {
+    res.status(400).json({ error: 'Invalid phone number' });
+    return;
+  }
+
+  const phone = normalizePhone(rawPhone.trim());
+  if (!phone) {
+    res.status(400).json({ error: 'Invalid phone number' });
+    return;
+  }
+
+  try {
+    await pool.query(
+      'DELETE FROM otp_codes WHERE email = $1 AND used = false',
+      [phone],
+    );
+
+    const code = generateOtp();
+
+    await pool.query(
+      `INSERT INTO otp_codes (email, code, expires_at)
+       VALUES ($1, $2, now() + interval '10 minutes')`,
+      [phone, code],
+    );
+
+    console.log(`[DEV] SMS OTP for ${phone}: ${code}`);
+
+    res.json({
+      message: 'Code sent',
+      channel: 'sms',
+      note: 'SMS not yet configured — check server console',
+    });
+  } catch (err) {
+    console.error('request-otp/phone error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /auth/verify-otp/phone
+authRouter.post('/verify-otp/phone', async (req: Request, res: Response): Promise<void> => {
+  const { phone: rawPhone, code } = req.body;
+
+  if (!rawPhone || !code || typeof rawPhone !== 'string' || typeof code !== 'string') {
+    res.status(400).json({ error: 'Missing phone or code' });
+    return;
+  }
+
+  const phone = normalizePhone(rawPhone.trim());
+  if (!phone) {
+    res.status(400).json({ error: 'Invalid phone number' });
+    return;
+  }
+
+  try {
+    const { rows: otpRows } = await pool.query(
+      `SELECT id FROM otp_codes
+       WHERE email = $1 AND code = $2 AND used = false AND expires_at > now()
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [phone, code],
+    );
+
+    if (!otpRows[0]) {
+      res.status(401).json({ error: 'Invalid or expired code' });
+      return;
+    }
+
+    await pool.query('UPDATE otp_codes SET used = true WHERE id = $1', [otpRows[0].id]);
+
+    const { rows: userRows } = await pool.query(
+      `INSERT INTO users (email)
+       VALUES ($1)
+       ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+       RETURNING id, email, created_at`,
+      [phone],
+    );
+    const user = userRows[0];
+
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions,
+    );
+
+    res.json({
+      token,
+      user: { id: user.id, email: user.email, createdAt: user.created_at },
+    });
+  } catch (err) {
+    console.error('verify-otp/phone error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -43,6 +43,7 @@ type CompositionPosition = {
   name: string;
   value: number | null;
   sourceType: string;
+  lastUpdated: string | null;
 };
 
 type CompositionGroup = {
@@ -83,18 +84,12 @@ export type CompositionChartData = {
   dates: string[];
   categories: CategorySeries[];
   netWorth: number[];
+  dataStartDate?: string | null;
 };
 
 export async function fetchCompositionChart(): Promise<CompositionChartData> {
-  const toDate = new Date();
-  const fromDate = new Date();
-  fromDate.setDate(toDate.getDate() - 30);
-
-  const from = formatDateYYYYMMDD(fromDate);
-  const to = formatDateYYYYMMDD(toDate);
-
   const res = await fetch(
-    `${API_BASE}/chart/composition?from=${from}&to=${to}`,
+    `${API_BASE}/chart/composition`,
     {
       headers: {
         ...await getAuthHeaders(),

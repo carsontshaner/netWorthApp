@@ -6,18 +6,32 @@ import {
   Pressable,
   SafeAreaView,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { requestOtp, verifyOtp, saveToken } from '@/src/auth';
+import {
+  requestOtp,
+  requestOtpPhone,
+  verifyOtp,
+  verifyOtpPhone,
+  saveToken,
+  getGuestData,
+  clearGuestSession,
+} from '@/src/auth';
+import { API_BASE } from '@/src/api';
+import { harborWordmark } from '@/src/theme';
+import OtpInput from '@/components/OtpInput';
 
 export default function OtpScreen() {
   const router = useRouter();
-  const { email } = useLocalSearchParams<{ email: string }>();
+  const { contact, type, mergeGuest } = useLocalSearchParams<{
+    contact: string;
+    type?: string;
+    mergeGuest?: string;
+  }>();
+  const isPhone = type === 'phone';
 
   const [code, setCode] = useState('');
-  const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resentMsg, setResentMsg] = useState('');
@@ -25,12 +39,36 @@ export default function OtpScreen() {
   const canSubmit = code.length === 6 && !loading;
 
   async function handleVerify() {
-    if (!email) return;
+    if (!contact) return;
     setLoading(true);
     setError('');
     try {
-      const result = await verifyOtp(email, code);
+      const result = isPhone
+        ? await verifyOtpPhone(contact, code)
+        : await verifyOtp(contact, code);
       await saveToken(result.token);
+
+      if (mergeGuest === 'true') {
+        const guestData = await getGuestData();
+        if (guestData && guestData.positions.length > 0) {
+          const payload = guestData.positions.map(p => ({
+            category: p.category,
+            side: p.side,
+            label: p.label,
+            value: p.value,
+          }));
+          await fetch(`${API_BASE}/onboarding/complete`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${result.token}`,
+            },
+            body: JSON.stringify(payload),
+          });
+        }
+        await clearGuestSession();
+      }
+
       router.replace('/(tabs)');
     } catch {
       setError("That code didn't work. Try again or request a new one.");
@@ -41,11 +79,15 @@ export default function OtpScreen() {
   }
 
   async function handleResend() {
-    if (!email) return;
+    if (!contact) return;
     setError('');
     try {
-      await requestOtp(email);
-      setResentMsg('Code resent!');
+      if (isPhone) {
+        await requestOtpPhone(contact);
+      } else {
+        await requestOtp(contact);
+      }
+      setResentMsg('Code resent.');
       setTimeout(() => setResentMsg(''), 3000);
     } catch {
       setError('Could not resend. Please try again.');
@@ -68,16 +110,7 @@ export default function OtpScreen() {
       >
         <View style={{ flex: 1, paddingHorizontal: 40, justifyContent: 'center' }}>
           {/* Wordmark */}
-          <Text
-            style={{
-              fontSize: 48,
-              fontWeight: '300',
-              color: '#27231C',
-              letterSpacing: 5.5,
-              textAlign: 'center',
-              marginBottom: 48,
-            }}
-          >
+          <Text style={{ ...harborWordmark, textAlign: 'center', marginBottom: 48 }}>
             Harbor
           </Text>
 
@@ -90,7 +123,7 @@ export default function OtpScreen() {
               marginBottom: 8,
             }}
           >
-            Check your email
+            {isPhone ? 'Check your phone' : 'Check your email'}
           </Text>
 
           {/* Subheading */}
@@ -103,33 +136,13 @@ export default function OtpScreen() {
               lineHeight: 22,
             }}
           >
-            We sent a 6-digit code to {email}
+            We sent a 6-digit code to {contact}
           </Text>
 
-          {/* OTP input — single field, spaced digits feel like 6 boxes */}
-          <TextInput
-            value={code}
-            onChangeText={setCode}
-            maxLength={6}
-            keyboardType="number-pad"
-            autoFocus
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            style={{
-              width: '100%',
-              height: 72,
-              borderWidth: 1.5,
-              borderRadius: 12,
-              fontSize: 32,
-              fontWeight: '300',
-              color: '#27231C',
-              textAlign: 'center',
-              letterSpacing: 16,
-              borderColor: focused ? '#5B4A3A' : 'rgba(39,35,28,0.20)',
-              marginBottom: 24,
-              backgroundColor: 'transparent',
-            }}
-          />
+          {/* OTP input */}
+          <View style={{ marginBottom: 24 }}>
+            <OtpInput value={code} onChange={setCode} autoFocus />
+          </View>
 
           {/* Verify button */}
           <Pressable

@@ -1,0 +1,5 @@
+Please read MAGELLAN_HANDOFF_Session3.docx from the 
+repo root and tell me what session number it is from,
+then summarize what has changed since that session and
+report back. Magellan will regenerate the document at
+the end of each session.

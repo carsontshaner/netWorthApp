@@ -13,6 +13,7 @@ type Props = {
   data: CompositionChartData;
   height?: number;
   containerStyle?: ViewStyle;
+  dataStartDate?: string;
 };
 
 const PADDING = 14;
@@ -56,7 +57,7 @@ function toStackedPath(topCoords: Coordinate[], bottomCoords: Coordinate[]): str
   return `M ${topCoords[0].x} ${topCoords[0].y} ${topParts.slice(1).join(" ")} ${bottomParts.join(" ")} Z`;
 }
 
-export function BalanceSheetChart({ data, height = 260, containerStyle }: Props) {
+export function BalanceSheetChart({ data, height = 260, containerStyle, dataStartDate }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const CHART_WIDTH  = windowWidth;
   const CHART_HEIGHT = height;
@@ -99,6 +100,15 @@ export function BalanceSheetChart({ data, height = 260, containerStyle }: Props)
   const baselineY      = build([0])[0]?.y ?? CHART_HEIGHT - PADDING;
   const netWorthCoords = build(data.netWorth);
   const hasTrend       = netWorthCoords.length > 1;
+
+  // x-position of the data start marker
+  const dataStartX = (() => {
+    if (!dataStartDate || data.dates.length < 2) return null;
+    const idx = data.dates.findIndex(d => d === dataStartDate);
+    if (idx < 0) return null;
+    const innerWidth = CHART_WIDTH - PADDING * 2;
+    return PADDING + (idx / Math.max(data.dates.length - 1, 1)) * innerWidth;
+  })();
 
   return (
     <View style={{ marginTop: 24, ...containerStyle }}>
@@ -189,6 +199,19 @@ export function BalanceSheetChart({ data, height = 260, containerStyle }: Props)
               strokeLinejoin="round"
               strokeLinecap="round"
             />
+
+            {/* Data start marker — dashed vertical line */}
+            {dataStartX !== null && (
+              <Line
+                x1={dataStartX}
+                y1={0}
+                x2={dataStartX}
+                y2={CHART_HEIGHT}
+                stroke="rgba(39,35,28,0.50)"
+                strokeWidth={1.5}
+                strokeDasharray="4,4"
+              />
+            )}
           </Svg>
         )}
 
@@ -210,7 +233,7 @@ export function BalanceSheetChart({ data, height = 260, containerStyle }: Props)
           colors={['#F3E7D3', 'rgba(243,231,211,0)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
-          style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '30%' }}
+          style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: dataStartX !== null ? dataStartX : '30%' }}
           pointerEvents="none"
         />
       </View>

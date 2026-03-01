@@ -6,7 +6,8 @@
       "Bash(git cherry-pick:*)",
       "Bash(git push:*)",
       "Bash(npx expo:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

@@ -1,3 +1,11 @@
+export const harborWordmark = {
+  fontFamily: undefined,  // system default / DM Sans if loaded
+  fontSize: 48,
+  fontWeight: '500' as const,
+  color: '#27231C',
+  letterSpacing: 5.5,
+} as const;
+
 export const theme = {
   // Environment
   bg: {

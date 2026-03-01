@@ -1,5 +1,5 @@
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { fetchComposition, API_BASE, type CompositionSummary } from "@/src/api";
 import { getToken, isGuestSession, getGuestData } from "@/src/auth";
+import BackButton from "@/components/BackButton";
 import InfoButton from "@/components/InfoButton";
 import { categoryColor, categoryOrder } from "@/src/theme";
 
@@ -57,46 +58,55 @@ export default function CompositionScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<Record<string, string>>({});
 
   function onGroupsLayout(e: LayoutChangeEvent) {
     setGroupsTop(e.nativeEvent.layout.y);
   }
 
   function loadData() {
+    setData(null);
+    setError(null);
     fetchComposition()
       .then(setData)
       .catch((e) => setError(e?.message ?? "Unknown error"));
   }
 
+  const loadDepth = useCallback(async () => {
+    if (await isGuestSession()) {
+      const guestData = await getGuestData();
+      if (guestData && guestData.positions.length > 0) {
+        const today = new Date().toISOString().split('T')[0];
+        const groupMap = new Map<string, { category: string; total: number; positions: CompositionSummary['assets'][0]['positions'] }>();
+        for (const pos of guestData.positions) {
+          const key = `${pos.category}_${pos.side}`;
+          if (!groupMap.has(key)) groupMap.set(key, { category: pos.category, total: 0, positions: [] });
+          const g = groupMap.get(key)!;
+          g.total += pos.value;
+          g.positions.push({ id: pos.id, name: pos.label, value: pos.value, sourceType: 'manual', lastUpdated: today });
+        }
+        const assets: CompositionSummary['assets'] = [];
+        const liabilities: CompositionSummary['liabilities'] = [];
+        for (const [key, group] of groupMap) {
+          if (key.endsWith('_asset')) assets.push(group);
+          else liabilities.push(group);
+        }
+        const totalAssets = guestData.positions.filter(p => p.side === 'asset').reduce((s, p) => s + p.value, 0);
+        const totalLiabilities = guestData.positions.filter(p => p.side === 'liability').reduce((s, p) => s + p.value, 0);
+        setData({ assets, liabilities, totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities });
+      }
+      return;
+    }
+    loadData();
+  }, []);
+
+  // Fetch fresh data on mount
+  useEffect(() => {
+    loadDepth();
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      const loadDepth = async () => {
-        if (await isGuestSession()) {
-          const guestData = await getGuestData();
-          if (guestData && guestData.positions.length > 0) {
-            const today = new Date().toISOString().split('T')[0];
-            const groupMap = new Map<string, { category: string; total: number; positions: CompositionSummary['assets'][0]['positions'] }>();
-            for (const pos of guestData.positions) {
-              const key = `${pos.category}_${pos.side}`;
-              if (!groupMap.has(key)) groupMap.set(key, { category: pos.category, total: 0, positions: [] });
-              const g = groupMap.get(key)!;
-              g.total += pos.value;
-              g.positions.push({ id: pos.id, name: pos.label, value: pos.value, sourceType: 'manual', lastUpdated: today });
-            }
-            const assets: CompositionSummary['assets'] = [];
-            const liabilities: CompositionSummary['liabilities'] = [];
-            for (const [key, group] of groupMap) {
-              if (key.endsWith('_asset')) assets.push(group);
-              else liabilities.push(group);
-            }
-            const totalAssets = guestData.positions.filter(p => p.side === 'asset').reduce((s, p) => s + p.value, 0);
-            const totalLiabilities = guestData.positions.filter(p => p.side === 'liability').reduce((s, p) => s + p.value, 0);
-            setData({ assets, liabilities, totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities });
-          }
-          return;
-        }
-        loadData();
-      };
       loadDepth();
     }, [])
   );
@@ -121,30 +131,39 @@ export default function CompositionScreen() {
   async function handleSave() {
     if (!data) return;
     setSaving(true);
+    setSaveError({});
+    let anyError = false;
     try {
       const token = await getToken();
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      // Update values for positions
       for (const g of [...data.assets, ...data.liabilities]) {
         for (const p of g.positions) {
           const newVal = parseFloat((editValues[p.id] ?? '').replace(/,/g, ''));
           if (!isNaN(newVal) && newVal !== (p.value ?? 0)) {
-            await fetch(`${API_BASE}/positions/${p.id}`, {
-              method: 'PATCH',
-              headers,
-              body: JSON.stringify({ value: newVal }),
-            });
+            console.log('[handleSave] PATCH position', p.id, 'value', newVal);
+            try {
+              const res = await fetch(`${API_BASE}/positions/${p.id}`, {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify({ value: newVal }),
+              });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            } catch (err) {
+              console.error('[handleSave] PATCH error for position', p.id, err);
+              setSaveError(prev => ({ ...prev, [p.id]: "Couldn't save — please try again." }));
+              anyError = true;
+            }
           }
         }
       }
 
-      setIsEditing(false);
-      setData(null);
-      loadData();
-    } catch {
-      Alert.alert('Error', 'Failed to save changes. Please try again.');
+      if (!anyError) {
+        setIsEditing(false);
+        setSaveError({});
+        loadData();
+      }
     } finally {
       setSaving(false);
     }
@@ -247,33 +266,40 @@ export default function CompositionScreen() {
           </View>
         </View>
         {isEditing ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 15, color: '#27231C', marginRight: 2 }}>$</Text>
-              <TextInput
-                value={editValues[position.id] ?? ''}
-                onChangeText={raw => {
-                  const clean = raw.replace(/[^0-9.]/g, '');
-                  setEditValues(prev => ({ ...prev, [position.id]: clean }));
-                }}
-                keyboardType="decimal-pad"
-                style={{
-                  fontSize: 15,
-                  color: '#27231C',
-                  borderBottomWidth: 1,
-                  borderBottomColor: '#5B4A3A',
-                  minWidth: 80,
-                  textAlign: 'right',
-                  paddingBottom: 2,
-                }}
-              />
+          <View style={{ alignItems: 'flex-end' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, color: '#27231C', marginRight: 2 }}>$</Text>
+                <TextInput
+                  value={editValues[position.id] ?? ''}
+                  onChangeText={raw => {
+                    const clean = raw.replace(/[^0-9.]/g, '');
+                    setEditValues(prev => ({ ...prev, [position.id]: clean }));
+                  }}
+                  keyboardType="decimal-pad"
+                  style={{
+                    fontSize: 15,
+                    color: '#27231C',
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#5B4A3A',
+                    minWidth: 80,
+                    textAlign: 'right',
+                    paddingBottom: 2,
+                  }}
+                />
+              </View>
+              <Pressable
+                onPress={() => promptDelete(position.id, position.name)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={{ fontSize: 16, color: 'rgba(39,35,28,0.35)' }}>✕</Text>
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => promptDelete(position.id, position.name)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={{ fontSize: 16, color: 'rgba(39,35,28,0.35)' }}>✕</Text>
-            </Pressable>
+            {saveError[position.id] ? (
+              <Text style={{ fontSize: 13, fontWeight: '300', color: '#C0392B', marginTop: 4 }}>
+                {saveError[position.id]}
+              </Text>
+            ) : null}
           </View>
         ) : (
           <Text style={{ fontSize: 15, opacity: 0.78 }}>
@@ -286,6 +312,10 @@ export default function CompositionScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#F3E7D3" }}>
+      {/* Back button — top left */}
+      <View style={{ position: 'absolute', top: insets.top + 12, left: 20, zIndex: 10 }}>
+        <BackButton label="Chart" />
+      </View>
       {/* Pencil edit icon — top right */}
       <Pressable
         onPress={handleEditToggle}

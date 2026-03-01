@@ -395,7 +395,7 @@ export default function HomeScreen() {
               onStart={() => router.push('/onboarding')}
             />
           ) : (
-            <Pressable onPress={() => router.push("/composition")}>
+            <Pressable onPress={() => router.push('/composition')}>
               <BalanceSheetChart data={data} height={chartHeight} dataStartDate={data.dataStartDate ?? undefined} />
             </Pressable>
           )
@@ -409,7 +409,7 @@ export default function HomeScreen() {
               <Text style={{ marginTop: 12, fontSize: 12, opacity: 0.6 }}>Updated today</Text>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push("/composition")}
+                onPress={() => router.push('/composition')}
                 style={{ marginTop: 6, alignSelf: "flex-start", paddingVertical: 4 }}
               >
                 <Text style={{ fontSize: 14, opacity: 0.72 }}>See depth →</Text>

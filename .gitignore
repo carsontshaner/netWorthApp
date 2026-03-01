@@ -72,6 +72,8 @@ temp/
 # -----------------------------
 jest-cache/
 
-instruction.txt
+instruction.txt 
+# Please read and execute the contents of instruction.txt in the repo root
+
 sessionPush.txt
 MAGELLAN_HANDOFF_Session3.docx

@@ -23,12 +23,10 @@ export default function RootLayout() {
         <Stack.Screen
           name="composition"
           options={{
-            title: "Depth",
-            headerBackTitle: "Chart",
-            headerShadowVisible: false,
-            headerStyle: { backgroundColor: "#F3E7D3" },
-            headerTintColor: "#1D160D",
-            animation: "fade_from_bottom",
+            headerShown: false,
+            animation: 'fade',
+            animationDuration: 280,
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen name="welcome-back" options={{ headerShown: false, gestureEnabled: false }} />

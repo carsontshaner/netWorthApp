@@ -37,9 +37,17 @@ pool.query(`
 `).catch(err => console.error('DDL migration failed:', err));
 
 pool.query(`
-  ALTER TABLE valuation_snapshots
-    ADD CONSTRAINT IF NOT EXISTS uq_snapshot_position_date
-    UNIQUE (position_id, as_of_date)
+  DO $$
+  BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conname = 'uq_snapshot_position_date'
+      AND conrelid = 'valuation_snapshots'::regclass
+    ) THEN
+      ALTER TABLE valuation_snapshots
+        ADD CONSTRAINT uq_snapshot_position_date UNIQUE (position_id, as_of_date);
+    END IF;
+  END $$;
 `).catch(err => console.error('DDL migration (unique constraint) failed:', err));
 
 app.get('/health', (_req, res) => {

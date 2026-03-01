@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getToken, isGuestSession, saveGuestData } from '@/src/auth';
+import { getToken, isGuestSession, getGuestData, saveGuestData } from '@/src/auth';
 import { API_BASE } from '@/src/api';
 import { CATEGORY_ORDER, categoryColor, harborWordmark } from '@/src/theme';
 import BackButton from '@/components/BackButton';
@@ -80,13 +80,90 @@ export default function OnboardingScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
 
+  // On mount: load existing positions into state for update mode
+  useEffect(() => {
+    async function loadExisting() {
+      if (await isGuestSession()) {
+        const data = await getGuestData();
+        if (!data?.positions?.length) return;
+        const assets = data.positions
+          .filter(p => p.side === 'asset')
+          .map(p => ({
+            id: p.id,
+            side: 'asset' as const,
+            category: p.category,
+            value: formatCurrencyInput(String(p.value)),
+            label: p.label,
+            skipped: false,
+          }));
+        const liabilities = data.positions
+          .filter(p => p.side === 'liability')
+          .map(p => ({
+            id: p.id,
+            side: 'liability' as const,
+            category: p.category,
+            value: formatCurrencyInput(String(p.value)),
+            label: p.label,
+            skipped: false,
+          }));
+        if (assets.length > 0) setAssetEntries(assets);
+        if (liabilities.length > 0) setLiabilityEntries(liabilities);
+      } else {
+        const token = await getToken();
+        if (!token) return;
+        try {
+          const res = await fetch(`${API_BASE}/composition/summary`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          const assets: Entry[] = (data.assets ?? []).flatMap((group: any) =>
+            (group.positions ?? []).map((p: any) => ({
+              id: p.id,
+              side: 'asset' as const,
+              category: group.category,
+              value: p.value != null ? formatCurrencyInput(String(p.value)) : '',
+              label: p.name ?? '',
+              skipped: false,
+            }))
+          );
+          const liabilities: Entry[] = (data.liabilities ?? []).flatMap((group: any) =>
+            (group.positions ?? []).map((p: any) => ({
+              id: p.id,
+              side: 'liability' as const,
+              category: group.category,
+              value: p.value != null ? formatCurrencyInput(String(p.value)) : '',
+              label: p.name ?? '',
+              skipped: false,
+            }))
+          );
+          if (assets.length > 0) setAssetEntries(assets);
+          if (liabilities.length > 0) setLiabilityEntries(liabilities);
+        } catch {
+          // silently fail — user sees an empty form
+        }
+      }
+    }
+    loadExisting();
+  }, []);
+
   // Initialize with one empty entry when a side is first selected
   useEffect(() => {
     if (!activeSide) return;
     if (activeSide === 'assets') {
-      setAssetEntries(prev => prev.length === 0 ? [newEntry('asset')] : prev);
+      setAssetEntries(prev => {
+        if (prev.length === 0) return [newEntry('asset')];
+        const last = prev[prev.length - 1];
+        if (last.category !== null && last.value !== '') return [...prev, newEntry('asset')];
+        return prev;
+      });
     } else {
-      setLiabilityEntries(prev => prev.length === 0 ? [newEntry('liability')] : prev);
+      setLiabilityEntries(prev => {
+        if (prev.length === 0) return [newEntry('liability')];
+        const last = prev[prev.length - 1];
+        if (last.category !== null && last.value !== '') return [...prev, newEntry('liability')];
+        return prev;
+      });
     }
   }, [activeSide]);
 
@@ -154,16 +231,17 @@ export default function OnboardingScreen() {
       }));
 
       if (await isGuestSession()) {
-        await saveGuestData({
-          positions: payload.map(p => ({
-            id: String(Date.now() + Math.random()),
-            category: p.category,
-            side: p.side,
-            label: p.label,
-            value: p.value,
-            createdAt: new Date().toISOString(),
-          })),
-        });
+        const existingData = await getGuestData();
+        const existingById = new Map((existingData?.positions ?? []).map(p => [p.id, p]));
+        const positions = filledEntries.map(e => ({
+          id: e.id,
+          category: e.category!,
+          side: e.side,
+          label: e.label || (CATEGORY_LABELS[`${e.category}_${e.side}`] ?? e.category!),
+          value: parseFloat(e.value.replace(/,/g, '')),
+          createdAt: existingById.get(e.id)?.createdAt ?? new Date().toISOString(),
+        }));
+        await saveGuestData({ positions });
         router.replace('/(tabs)');
         return;
       }

@@ -114,8 +114,8 @@ export default function LandingScreen() {
       </View>
 
       {/* ─── LAYER 2 — WAVES ─── */}
-      <View style={styles.waveLayer} pointerEvents="none">
-        <View style={styles.waveContainer}>
+      <View style={styles.waveLayer}>
+        <View style={styles.waveContainer} pointerEvents="none">
           {/* Wave 1 — back, lightest */}
           <Animated.View style={[styles.waveTile, { transform: [{ translateX: wave1TranslateX }] }]}>
             <Svg width={750} height={110} viewBox="0 0 750 110">
@@ -153,7 +153,7 @@ export default function LandingScreen() {
         </View>
 
         {/* Solid teal fill from front wave to bottom of screen */}
-        <View style={styles.waveFill} />
+        <View style={styles.waveFill} pointerEvents="none" />
       </View>
 
       {/* ─── LAYER 3 — BOTTOM CTA ─── */}

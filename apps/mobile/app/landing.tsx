@@ -114,7 +114,7 @@ export default function LandingScreen() {
       </View>
 
       {/* ─── LAYER 2 — WAVES ─── */}
-      <View style={styles.waveLayer}>
+      <View style={styles.waveLayer} pointerEvents="none">
         <View style={styles.waveContainer}>
           {/* Wave 1 — back, lightest */}
           <Animated.View style={[styles.waveTile, { transform: [{ translateX: wave1TranslateX }] }]}>

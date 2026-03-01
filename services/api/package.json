@@ -3,15 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "seed": "tsx scripts/seed.ts",
-    "migrate:auth": "tsx scripts/migrate_auth.ts",
+    "build": "tsc",
     "start": "node dist/server.js",
+    "migrate": "tsx scripts/migrate_auth.ts",
+    "migrate:auth": "tsx scripts/migrate_auth.ts",
+    "seed": "tsx scripts/seed.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@finance-clarity/shared": "0.1.0",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.7",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.3",
@@ -19,6 +25,7 @@
     "resend": "^6.9.3"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.10.2",

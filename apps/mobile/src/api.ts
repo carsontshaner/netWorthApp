@@ -1,6 +1,8 @@
 import { getToken } from './auth';
 
-export const API_BASE = "http://192.168.1.158:4000";
+export const API_BASE = __DEV__
+  ? 'http://localhost:3000'
+  : 'https://finance-clarityapi-production.up.railway.app';
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const token = await getToken();

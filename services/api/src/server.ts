@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import express, { NextFunction, Request, Response } from 'express';
+import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import { pool } from './db.js';
 import { AssetCategory, BalanceSheetSide, LiabilityCategory, PositionCategory, PositionSourceType } from '@finance-clarity/shared';
@@ -10,6 +11,14 @@ import { authRouter, JWT_SECRET } from './auth.js';
 type AuthedRequest = Request & { userId?: string };
 
 const app = express();
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:8081',
+    'https://finance-clarityapi-production.up.railway.app',
+  ],
+  credentials: true,
+}));
 app.use(express.json());
 
 const authMiddleware = (req: AuthedRequest, res: Response, next: NextFunction): void => {

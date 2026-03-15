@@ -8,6 +8,8 @@
     "apps/*"
   ],
   "scripts": {
+    "mobile": "cd apps/mobile && npx expo start --tunnel --clear",
+    "mobile:local": "cd apps/mobile && npx expo start --clear",
     "api:dev": "npm --workspace @finance-clarity/api run dev",
     "api:typecheck": "npm --workspace @finance-clarity/api run typecheck"
   }

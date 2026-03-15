@@ -3,6 +3,7 @@ import {
   View, Text, Pressable, StyleSheet,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 
 const MENU_ITEMS = [
   { label: 'Profile', key: 'profile' },
@@ -17,6 +18,7 @@ interface Props {
 
 export default function InfoButton({ onSelect }: Props) {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
 
   return (
     <>
@@ -45,8 +47,7 @@ export default function InfoButton({ onSelect }: Props) {
                 key={item.key}
                 style={[
                   styles.menuItem,
-                  i < MENU_ITEMS.length - 1 &&
-                    styles.menuItemBorder,
+                  styles.menuItemBorder,
                 ]}
                 onPress={() => {
                   setOpen(false);
@@ -58,6 +59,18 @@ export default function InfoButton({ onSelect }: Props) {
                 </Text>
               </Pressable>
             ))}
+            <Pressable
+              key="delete-account"
+              style={styles.menuItem}
+              onPress={() => {
+                setOpen(false);
+                router.push('/account-deletion');
+              }}
+            >
+              <Text style={[styles.menuLabel, { color: '#C62828' }]}>
+                Delete account
+              </Text>
+            </Pressable>
           </View>
         </>
       )}

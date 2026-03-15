@@ -565,6 +565,37 @@ app.post('/onboarding/complete', async (req: AuthedRequest, res: Response) => {
   }
 });
 
+// GDPR/CCPA: permanent account deletion — required for App Store compliance
+app.delete('/account', async (req: AuthedRequest, res: Response): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `DELETE FROM valuation_snapshots WHERE position_id IN (SELECT id FROM positions WHERE user_id = $1)`,
+      [req.userId],
+    );
+    await client.query(`DELETE FROM positions WHERE user_id = $1`, [req.userId]);
+    await client.query(
+      `DELETE FROM otp_codes WHERE email = (SELECT email FROM users WHERE id = $1)`,
+      [req.userId],
+    );
+    await client.query(`DELETE FROM users WHERE id = $1`, [req.userId]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /account error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // ─── Dev-only routes ──────────────────────────────────────────────────────────
 
 app.delete('/dev/reset-user', async (req: AuthedRequest, res: Response): Promise<void> => {

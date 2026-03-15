@@ -30,6 +30,14 @@ export default function RootLayout() {
         <Stack.Screen name="welcome-back" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+        <Stack.Screen
+          name="account-deletion"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_bottom',
+            gestureEnabled: true,
+          }}
+        />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
